@@ -8,6 +8,59 @@ from io import BytesIO
 import warnings
 warnings.filterwarnings('ignore')
 
+
+# ============================================================================
+# LLM INTEGRATION (Groq)
+# ============================================================================
+try:
+    from groq import Groq
+    LLM_AVAILABLE = True
+except ImportError:
+    LLM_AVAILABLE = False
+
+def get_llm_response(user_query, context=""):
+    """Get response from Groq LLM"""
+    if not LLM_AVAILABLE:
+        return None
+    
+    # Get API key from environment or Streamlit secrets
+    api_key = os.getenv("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY", None)
+    
+    if not api_key:
+        return None
+    
+    try:
+        client = Groq(api_key=api_key)
+        
+        system_prompt = f"""You are AfroMediBot, an AI assistant for drug discovery from African medicinal plants.
+
+Available database context:
+{context}
+
+Your capabilities:
+- Screen plants for diseases
+- Analyze molecular structures
+- Predict drug-likeness
+- Provide scientific information
+
+Respond conversationally and scientifically accurate."""
+
+        response = client.chat.completions.create(
+            model="llama-3.1-70b-versatile",  # or "mixtral-8x7b-32768"
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_query}
+            ],
+            temperature=0.7,
+            max_tokens=1024
+        )
+        
+        return response.choices[0].message.content
+    
+    except Exception as e:
+        st.error(f"LLM Error: {e}")
+        return None
+
 # Page config
 st.set_page_config(
     page_title="AfroMediBot - AI Drug Discovery",
@@ -164,6 +217,18 @@ class ChatbotAgent:
         
         # Parse intent
         intent = self.parse_intent(user_input.lower())
+
+        # If intent is unclear, try LLM
+        if intent['type'] is None and LLM_AVAILABLE:
+            # Build context from database
+            context = ""
+            if self.df is not None:
+                context = f"Database has {len(self.df)} compounds from various medicinal plants."
+            
+            llm_response = get_llm_response(user_input, context)
+            if llm_response:
+                return f"🤖 **AI Assistant:**\n\n{llm_response}"
+
         
         # Handle uploaded SMILES
         if uploaded_smiles is not None:
@@ -431,9 +496,19 @@ Cancer, Malaria, Diabetes, HIV, Tuberculosis, Inflammation
 
 **Need more help?** Just ask!
         """
-    
+
     def default_response(self):
-        return """
+        if LLM_AVAILABLE:
+            return """
+🤖 **Let me help you with that...**
+
+I'll use my AI assistant to answer your question. Or try:
+- "Screen bitter leaf for cancer"
+- "Find compounds in neem"
+- "Help" - to see all commands
+            """
+        else:
+            return """
 🤔 **I'm not sure what you're asking**
 
 Try:
@@ -442,7 +517,7 @@ Try:
 - "Help" - to see all commands
 
 Or describe what you'd like to do!
-        """
+            """
 
 # ============================================================================
 # PDF & AUDIO GENERATION
@@ -539,17 +614,41 @@ def main():
     # Sidebar
     with st.sidebar:
         st.title("⚙️ Settings")
+
+        st.title("⚙️ Settings")
         
-        # Load database
-        df = load_prefiltered_database()
-        if df is not None:
-            st.success(f"✅ Database loaded: {len(df):,} compounds")
-        else:
+        # ADD THIS BLOCK:
+        if LLM_AVAILABLE:
+            st.subheader("🤖 AI Assistant")
+            api_key = st.text_input("Groq API Key", type="password", help="Get free key at console.groq.com")
+            if api_key:
+                os.environ["GROQ_API_KEY"] = api_key
+                st.success("✅ AI enabled")
+        
+        st.markdown("---")
+        
+        # Load database - CHECK SESSION STATE FIRST
+        if 'database' not in st.session_state:
+            df = load_prefiltered_database()
+            if df is not None:
+                st.session_state.database = df
+                st.success(f"✅ Database loaded: {len(df):,} compounds")
+            else:
+                st.session_state.database = None
+        
+        df = st.session_state.database
+        
+        # Allow upload if no database
+        if df is None:
             st.warning("⚠️ No pre-filtered database found")
             uploaded_db = st.file_uploader("Upload Database CSV", type=['csv'])
             if uploaded_db:
                 df = pd.read_csv(uploaded_db)
+                st.session_state.database = df
                 st.success(f"✅ Loaded {len(df):,} compounds")
+                st.rerun()
+        else:
+            st.success(f"✅ Database: {len(df):,} compounds")
         
         st.markdown("---")
         
