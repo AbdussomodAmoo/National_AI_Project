@@ -366,8 +366,8 @@ def setup_all_targets_rapid():
         pdbqt_file = f'{target_name}.pdbqt'
         
         # Download (only if not exists)
-        if not os.path.exists(pdb_file):
-            !wget -q https://files.rcsb.org/download/{info['pdb_id']}.pdb -O {pdb_file}
+        #if not os.path.exists(pdb_file):
+        #    !wget -q https://files.rcsb.org/download/{info['pdb_id']}.pdb -O {pdb_file}
         
         # Prepare protein
         if prepare_protein_for_docking(pdb_file, pdbqt_file):
