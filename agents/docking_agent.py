@@ -211,7 +211,7 @@ def prepare_protein_for_docking(pdb_file, output_pdbqt):
 
 
 
-          DOCKING_TARGETS = {
+    DOCKING_TARGETS = {
     # CANCER TARGETS
     'cancer_EGFR': {
         'pdb_id': '1M17',
