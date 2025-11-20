@@ -382,3 +382,134 @@ def setup_all_targets_rapid():
     
     print(f"\n✅ Setup complete: {len(dockers)}/{len(DOCKING_TARGETS)} ready")
     return dockers
+
+import pandas as pd
+import os
+
+# Assume all_dockers dictionary is populated by setup_all_targets_rapid()
+# If you run this code separately, you must ensure all_dockers is defined and populated.
+
+def perform_docking_for_target(smiles, target_name, debug=False):
+    """
+    Executes a molecular docking simulation for a single compound against a specific target.
+
+    Parameters:
+    -----------
+    smiles : str
+        The SMILES string of the compound to dock.
+    target_name : str
+        The name of the target protein (e.g., 'cancer_EGFR').
+    debug : bool
+        If True, prints detailed debug messages during the workflow.
+
+    Returns:
+    --------
+    dict: {'target': str, 'smiles': str, 'binding_energy': float or None, 'status': str}
+    """
+    if target_name not in all_dockers:
+        return {
+            'target': target_name, 
+            'smiles': smiles, 
+            'binding_energy': None, 
+            'status': f"Error: Target '{target_name}' not found/prepared."
+        }
+    
+    # 1. Get the pre-configured SimpleDockingAgent
+    docker = all_dockers[target_name]
+    
+    if debug:
+        print(f"DEBUG: Starting docking for SMILES: {smiles} on target: {target_name}")
+
+    # 2. Execute the docking workflow
+    energy = docker.dock_compound(smiles)
+
+    if energy is not None:
+        status = 'Success'
+        if debug:
+            print(f"DEBUG: Docking successful. Energy: {energy:.2f} kcal/mol.")
+    else:
+        status = 'Failed'
+        if debug:
+            # Note: The underlying SimpleDockingAgent handles printing specific failure reasons
+            print(f"DEBUG: Docking failed.")
+
+    # 3. Return a structured result
+    return {
+        'target': target_name,
+        'smiles': smiles,
+        'binding_energy': energy,
+        'status': status
+    }
+
+# ============= ADD THIS NEW SECTION =============
+def save_docking_results_to_csv(all_dockers, compounds_df, output_csv='docking_results.csv'):
+    """
+    Dock all compounds against all targets and save comprehensive results
+    
+    Parameters:
+    -----------
+    all_dockers : dict
+        Dictionary of SimpleDockingAgent instances {target_name: docker}
+    compounds_df : DataFrame
+        Must have 'canonical_smiles' and optionally 'compound_name' columns
+    output_csv : str
+        Output filename
+    """
+    import pandas as pd
+    from tqdm import tqdm
+    
+    all_results = []
+    
+    total_dockings = len(compounds_df) * len(all_dockers)
+    print(f"🎯 Starting {total_dockings} docking simulations...")
+    print(f"   {len(compounds_df)} compounds × {len(all_dockers)} targets\n")
+    
+    # For each target
+    for target_name, docker in all_dockers.items():
+        print(f"\n{'='*70}")
+        print(f"🎯 Docking against: {target_name.upper()}")
+        print(f"{'='*70}")
+        
+        target_results = []
+        
+        # Dock all compounds
+        for idx, row in tqdm(compounds_df.iterrows(), total=len(compounds_df), desc=f"{target_name}"):
+            smiles = row['canonical_smiles']
+            compound_name = row.get('compound_name', f"Compound_{idx}")
+            
+            # Perform docking
+            energy = docker.dock_compound(smiles)
+            
+            result = {
+                'compound_name': compound_name,
+                'smiles': smiles,
+                'target': target_name,
+                'binding_energy': energy,
+                'binding_affinity': energy,  # Same as binding_energy
+                'target_protein': target_name.split('_')[0],  # e.g., 'cancer' from 'cancer_EGFR'
+                'status': 'Success' if energy is not None else 'Failed'
+            }
+            
+            target_results.append(result)
+            all_results.append(result)
+        
+        # Summary for this target
+        successes = sum(1 for r in target_results if r['status'] == 'Success')
+        print(f"✅ {target_name}: {successes}/{len(compounds_df)} successful")
+    
+    # Convert to DataFrame
+    results_df = pd.DataFrame(all_results)
+    
+    # Save to CSV
+    results_df.to_csv(output_csv, index=False)
+    
+    print(f"\n{'='*70}")
+    print(f"📊 DOCKING SUMMARY")
+    print(f"{'='*70}")
+    print(f"Total simulations: {len(results_df)}")
+    print(f"Successful: {(results_df['status'] == 'Success').sum()}")
+    print(f"Failed: {(results_df['status'] == 'Failed').sum()}")
+    print(f"\n💾 Saved to: {output_csv}")
+    
+    return results_df
+
