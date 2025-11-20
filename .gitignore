@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+
+# Data (too large for Git)
+data/*.csv
+data/*.zip
+notebooks/coconut_csv/
+
+# Models (use Git LFS or external storage)
+models/*.pkl
+models/*.joblib
+
+# Temporary files
+*.log
+*.pdbqt
+*.pdb
+temp/
