@@ -36,9 +36,16 @@ st.set_page_config(
 
 # Import your existing classes (adjust paths as needed)
 try:
-    from main_pipeline import PlantAgent, FilterAgent
-    from molecular_docking import SimpleDockingAgent
-    from optimization_agent import MoleculeOptimizationAgent
+    from agents.plant_agent import PlantAgent
+    from agents.filter_agents import FilterAgent  # Note: Your file is filter_agents.py (plural)
+    from agents.docking_agent import SimpleDockingAgent, setup_all_targets_rapid
+    from agents.ADMETMoleculeOptimizer import MoleculeOptimizationAgent
+    from agents.chatbot_agent import ChatbotAgent  # If you need this
+    
+    st.success("✅ Agents loaded successfully!")
+    #from main_pipeline import PlantAgent, FilterAgent
+    #from molecular_docking import SimpleDockingAgent
+    #from optimization_agent import MoleculeOptimizationAgent
     # from bioactivity_agent import BioactivityPredictor  # If you have this
     # from admet_models import ADMETPredictor  # Your ADMET class
 except ImportError:
