@@ -798,11 +798,20 @@ def main():
     # ========================================================================
     # ADVANCED FEATURES TABS
     # ========================================================================
+    # TABS - Show only when user clicks
+    if 'show_advanced' not in st.session_state:
+        st.session_state.show_advanced = False
+    
     st.markdown("---")
-    st.subheader("🔬 Advanced Analysis Tools")
     
-    tab1, tab2, tab3 = st.tabs(["🧬 Bioactivity Prediction", "🎯 Molecular Docking", "🔮 3D Structure Generation"])
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        if st.button("🔬 Advanced Tools", use_container_width=True):
+            st.session_state.show_advanced = not st.session_state.show_advanced
     
+    if st.session_state.show_advanced:
+        st.subheader("🔬 Advanced Analysis Tools")
+        tab1, tab2, tab3 = st.tabs(["🧬 Bioactivity", "🎯 Docking", "🔮 3D"])    
     # ========================================================================
     # TAB 1: BIOACTIVITY PREDICTION
     # ========================================================================
