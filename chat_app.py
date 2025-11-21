@@ -972,7 +972,7 @@ def main():
     #if 'chatbot' not in st.session_state or st.session_state.chatbot.df is None:
     #    needs_reinitialization = True
     # 2. If it exists, check if the underlying DataFrame has changed (or is still None)
-    elif st.session_state.chatbot.df is not df:
+    '''elif st.session_state.chatbot.df is not df:
         needs_reinitialization = True
     if needs_reinitialization:
         if df is not None:
@@ -982,7 +982,7 @@ def main():
         else:
             # If the database (df) is None, explicitly set the chatbot to None
             # This prevents the chatbot from being created with a bad df
-            st.session_state.chatbot = None
+            st.session_state.chatbot = None'''
     
     # Initialize session state FIRST
     if 'messages' not in st.session_state:
