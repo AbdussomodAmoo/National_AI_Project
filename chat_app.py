@@ -1118,7 +1118,7 @@ def main():
                                 df['organisms'].str.contains(search_name, case=False, na=False) |
                                 df.get('name', pd.Series()).str.contains(search_name, case=False, na=False) |
                                 df.get('canonical_smiles', pd.Series()).str.contains(search_name, case=False, na=False)
-                            ]
+                            ]'''
                             
                             if len(matches) > 0:
                                 st.success(f"✅ Found {len(matches)} matches in database")
