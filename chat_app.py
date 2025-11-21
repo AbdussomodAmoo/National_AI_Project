@@ -969,8 +969,8 @@ def main():
                 st.warning("No results to summarize. Run a screening first.")
 
     # Initialize chatbot - ALWAYS reinitialize if df changes
-    if 'chatbot' not in st.session_state or st.session_state.chatbot.df is None:
-        needs_reinitialization = True
+    #if 'chatbot' not in st.session_state or st.session_state.chatbot.df is None:
+    #    needs_reinitialization = True
     # 2. If it exists, check if the underlying DataFrame has changed (or is still None)
     elif st.session_state.chatbot.df is not df:
         needs_reinitialization = True
