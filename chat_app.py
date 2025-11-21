@@ -1099,27 +1099,7 @@ def main():
                                 df.get('name', pd.Series()).str.contains(search_name, case=False, na=False) |
                                 df.get('canonical_smiles', pd.Series()).str.contains(search_name, case=False, na=False)
                             ]
-                '''else:  # Search by name
-                    search_name = st.text_input("Enter plant or compound name:", key='bio_search')
-                    
-                    if search_name:
-                        if df is None:
-                            st.error("❌ Please upload database first")
-                        else:
-                            # FIRST: Resolve common name to botanical name using PlantAgent
-                            resolved_name = st.session_state.chatbot.plant_agent.resolve_plant_name(search_name)
-                            
-                            # Show resolution if different
-                            if resolved_name.lower() != search_name.lower():
-                                st.info(f"🔍 Mapped '{search_name}' → '{resolved_name}'")
-                            
-                            # THEN: Search database with BOTH original and resolved names
-                            matches = df[
-                                df['organisms'].str.contains(search_name, case=False, na=False) |
-                                df.get('name', pd.Series()).str.contains(search_name, case=False, na=False) |
-                                df.get('canonical_smiles', pd.Series()).str.contains(search_name, case=False, na=False)
-                            ]'''
-                            
+                    if search_name:                  
                         if len(matches) > 0:
                             st.success(f"✅ Found {len(matches)} matches in database")
                             
