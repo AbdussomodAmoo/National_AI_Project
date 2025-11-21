@@ -913,7 +913,7 @@ def main():
         df = st.session_state.database
         
         # Allow upload if no database
-        None:
+        if df is None:
             st.warning("⚠️ No pre-filtered database found")
             uploaded_db = st.file_uploader("Upload Database CSV", type=['csv'])
             if uploaded_db:
