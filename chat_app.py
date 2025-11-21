@@ -166,7 +166,7 @@ def load_prefiltered_database():
     return None
 
 # ============================================================================
-# PLANT AGENT (Your existing code)
+# PLANT AGENT (Modified for Scoring)
 # ============================================================================
 class PlantAgent:
     def __init__(self, df):
@@ -193,8 +193,6 @@ class PlantAgent:
             'Psidium guajava': 'guava, gova, gofa',
             'Annona muricata': 'soursop, graviola, abo, fasadarur',
             'Chrysophyllum albidum': 'african star apple, agbalumo, udara, udala, alasa',
-
-            # Common Database Organisms
             'Homo sapiens': 'human',
             'Citrullus lanatus': 'watermelon, egusi, kankana',
             'Mus musculus': 'mouse',
@@ -281,6 +279,59 @@ class PlantAgent:
         
         return None
 
+# =========================================================================
+    # 🚩 NEW CORE METHOD: RUN (Used by screen_plant_compounds) 🚩
+    # =========================================================================
+    def run(self, filtered_df, disease_target):
+        """
+        Calculates a 'bioactivity_score' based on drug-likeness and
+        a simulated relevance to the disease target.
+        
+        Args:
+            filtered_df (pd.DataFrame): Compounds filtered for the selected plant.
+            disease_target (str): The disease target query.
+            
+        Returns:
+            pd.DataFrame: The DataFrame with the new 'bioactivity_score' column.
+        """
+        # Ensure we are working with a copy to avoid SettingWithCopyWarning
+        scored_df = filtered_df.copy()
+
+        # 1. Calculate an initial score based primarily on drug-likeness (QED)
+        # QED (Quantitative Estimation of Drug-likeness) ranges from 0 to 1.
+        # Use QED as the base score.
+        scored_df['bioactivity_score'] = scored_df['qed_drug_likeliness'].fillna(0)
+
+        # 2. Apply a bonus based on relevance (simulated for demonstration)
+        # In a real system, this would involve complex ML models (like an embedded LLM)
+        # to score SMILES strings against the target's MOA/Protein target.
+        # Here, we use a simple heuristic based on the disease target name:
+        target_bonus = 0
+        if any(word in disease_target.lower() for word in ["cancer", "tumor", "oncology"]):
+             target_bonus = 0.3
+        elif any(word in disease_target.lower() for word in ["malaria", "fever", "parasite"]):
+             target_bonus = 0.2
+        elif any(word in disease_target.lower() for word in ["hiv", "viral", "aids"]):
+             target_bonus = 0.4
+        elif any(word in disease_target.lower() for word in ["diabetes", "sugar", "insulin"]):
+             target_bonus = 0.15
+        
+        # 3. Modify the score: Give compounds with favorable LogP (around 0 to 3) a small boost
+        # This simulates favoring lipophilicity for good absorption.
+        if 'alogp' in scored_df.columns:
+            # Create a LogP bonus: 1 - |LogP - 2| / 2. Max bonus is 1 at LogP=2, min is 0 at LogP=0 or 4.
+            # Shift it down and multiply by a factor (e.g., 0.1)
+            logp_bonus = 0.1 * (1 - abs(scored_df['alogp'].fillna(999) - 2) / 2).clip(lower=0)
+            
+            scored_df['bioactivity_score'] += logp_bonus
+
+        # 4. Apply the disease target bonus (scaled)
+        scored_df['bioactivity_score'] += target_bonus * scored_df['qed_drug_likeliness']
+        
+        # Clip score to 1.0 maximum
+        scored_df['bioactivity_score'] = scored_df['bioactivity_score'].clip(upper=1.0)
+        
+        return scored_df
 # ============================================================================
 # PREDICTOR AGENT (Your existing code with featurization)
 # ============================================================================
