@@ -9,6 +9,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 
+'''
 # ============================================================================
 # LLM INTEGRATION (Groq)
 # ============================================================================
@@ -52,7 +53,7 @@ Respond conversationally and scientifically accurate."""
                 {"role": "user", "content": user_query}
             ],
             temperature=0.7,
-            max_tokens=1024
+            max_tokens=2048
         )
         
         return response.choices[0].message.content
@@ -60,6 +61,62 @@ Respond conversationally and scientifically accurate."""
     except Exception as e:
         st.error(f"LLM Error: {e}")
         return None
+'''
+# ============================================================================
+# LLM INTEGRATION (GroqClient & Expert Analysis)
+# ============================================================================
+class GroqClient:
+    def __init__(self, api_key):
+        self.client = Groq(api_key=api_key) if LLM_AVAILABLE and api_key else None
+
+    def generate_expert_analysis(self, results_df, query_text):
+        if not self.client:
+            return "LLM service unavailable. Please check the Groq API key."
+
+        # Prepare context for the LLM
+        top_candidates_markdown = "Name | MW (Da) | QED Score | LogP\n---|---|---|---\n"
+        for _, row in results_df.head(10).iterrows():
+            name = str(row.get('name', 'Unknown'))
+            mw = f"{row.get('molecular_weight', 0):.1f}"
+            qed = f"{row.get('qed_drug_likeliness', 0):.3f}"
+            logp = f"{row.get('alogp', 0):.2f}"
+            top_candidates_markdown += f"{name} | {mw} | {qed} | {logp}\n"
+
+        system_prompt = f"""You are AfroMediBot, an AI Expert in natural products drug discovery. 
+Your task is to provide a concise, professional expert analysis report based on the screening results.
+The analysis should focus on the top candidates' drug-likeness and potential for the target {query_text}.
+
+Key Data:
+- Total Candidates: {len(results_df)}
+- Drug-like Candidates (QED >= 0.5): {results_df.get('qed_drug_likeliness', pd.Series([0])).apply(lambda x: x >= 0.5 if pd.notna(x) else False).sum()}
+- Query: {query_text}
+
+Top 10 Candidates Data (for analysis):
+{top_candidates_markdown}
+
+Structure the response with markdown headings:
+## 🔬 Expert Analysis Report
+### 1. Summary of Screening Results
+### 2. Physicochemical Assessment (Key trends in MW, LogP, QED)
+### 3. Lead Candidate Recommendation
+### 4. Next Steps (In vitro, in vivo, or synthesis recommendations)
+
+Be concise, scientific, and highlight the most promising molecule(s).
+"""
+        try:
+            response = self.client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Generate the expert analysis report for the screening: {query_text}."}
+                ],
+                temperature=0.3,
+                max_tokens=2048
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            st.error(f"LLM Error: {e}")
+            return None
 
 # Page config
 st.set_page_config(
@@ -889,7 +946,6 @@ def main():
     with st.sidebar:
         st.title("⚙️ Settings")
 
-        st.title("⚙️ Settings")
         
         # ADD THIS BLOCK:
         if LLM_AVAILABLE:
@@ -972,17 +1028,17 @@ def main():
     #if 'chatbot' not in st.session_state or st.session_state.chatbot.df is None:
     #    needs_reinitialization = True
     # 2. If it exists, check if the underlying DataFrame has changed (or is still None)
-    '''elif st.session_state.chatbot.df is not df:
-        needs_reinitialization = True
-    if needs_reinitialization:
-        if df is not None:
-            # Create the chatbot agent only if the database is loaded successfully
-            st.session_state.chatbot = ChatbotAgent(df)
-            st.session_state.messages = []
-        else:
-            # If the database (df) is None, explicitly set the chatbot to None
+    #elif st.session_state.chatbot.df is not df:
+    #    needs_reinitialization = True
+    #if needs_reinitialization:
+    #    if df is not None:
+    #        # Create the chatbot agent only if the database is loaded successfully
+    #        st.session_state.chatbot = ChatbotAgent(df)
+    #        st.session_state.messages = []
+    #    else:
+    #        # If the database (df) is None, explicitly set the chatbot to None
             # This prevents the chatbot from being created with a bad df
-            st.session_state.chatbot = None'''
+    #        st.session_state.chatbot = None
     
     # Initialize session state FIRST
     if 'messages' not in st.session_state:
