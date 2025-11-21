@@ -913,7 +913,7 @@ def main():
         df = st.session_state.database
         
         # Allow upload if no database
-        if df is None:
+        None:
             st.warning("⚠️ No pre-filtered database found")
             uploaded_db = st.file_uploader("Upload Database CSV", type=['csv'])
             if uploaded_db:
@@ -970,12 +970,19 @@ def main():
 
     # Initialize chatbot - ALWAYS reinitialize if df changes
     if 'chatbot' not in st.session_state or st.session_state.chatbot.df is None:
+        needs_reinitialization = True
+    # 2. If it exists, check if the underlying DataFrame has changed (or is still None)
+    elif st.session_state.chatbot.df is not df:
+        needs_reinitialization = True
+    if needs_reinitialization:
         if df is not None:
+            # Create the chatbot agent only if the database is loaded successfully
             st.session_state.chatbot = ChatbotAgent(df)
             st.session_state.messages = []
         else:
+            # If the database (df) is None, explicitly set the chatbot to None
+            # This prevents the chatbot from being created with a bad df
             st.session_state.chatbot = None
-            st.session_state.messages = []
     
     # Display chat history
     for message in st.session_state.messages:
