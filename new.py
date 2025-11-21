@@ -1,17 +1,15 @@
-# app.py - Structured AI Drug Discovery App
+# app.py - Drug Discovery Screening App (Refactored)
 import streamlit as st
 import pandas as pd
 import numpy as np
 import os
 import base64
 from io import BytesIO
-from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
 
-
 # ============================================================================
-# LLM INTEGRATION (Groq)
+# DEPENDENCY CHECKS
 # ============================================================================
 try:
     from groq import Groq
@@ -19,105 +17,12 @@ try:
 except ImportError:
     LLM_AVAILABLE = False
 
-# New helper class for Groq integration
-class GroqClient:
-    def __init__(self, api_key):
-        self.client = Groq(api_key=api_key)
-
-    def generate_expert_analysis(self, results_df, plant_query):
-        """Generates a structured expert analysis based on the results DataFrame."""
-        
-        # Prepare data for LLM context
-        df_summary = results_df[['name', 'canonical_smiles', 'molecular_weight', 'alogp', 'qed_drug_likeliness']].head(10)
-        
-        context_data = f"""
-        Drug Discovery Screening Results:
-        Query: {plant_query}
-        Total Compounds Found: {len(results_df)}
-        Top 10 Candidates Summary (Name, SMILES, MW, LogP, QED):
-        {df_summary.to_markdown(index=False)}
-        """
-
-        system_prompt = f"""You are Dr. AfroMediBot, a highly experienced computational chemist and expert in African medicinal plant research.
-
-Your task is to provide an in-depth, professional expert analysis on the provided screening results.
-
-Available Data Context:
-{context_data}
-
-Instructions:
-1. Start with a formal title: "Expert Analysis Report: [Plant Name] Screening".
-2. Provide a brief **Executive Summary** (2-3 sentences).
-3. Discuss **Methodology Review** (Plant sourcing, computational filtering: Lipinski's Rule, QED).
-4. Analyze the **Top Candidates** based on Molecular Weight, LogP, and QED scores.
-5. Provide clear **Recommendations** for the next steps (e.g., in vitro assays, toxicity testing).
-6. The entire response must be formatted using clear Markdown headings and bullet points for readability.
-"""
-
-        user_query = f"""
-        Based on the data context provided for the screening of '{plant_query}', generate the full expert analysis report.
-        Focus on the drug-likeness quality of the top compounds.
-        """
-        
-        try:
-            response = self.client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_query}
-                ],
-                temperature=0.3, # Use a lower temperature for factual, analytical results
-                max_tokens=2048
-            )
-            return response.choices[0].message.content
-            
-        except Exception as e:
-            # st.error(f"LLM Error: {e}") # Removed error display for cleaner separation
-            return None
-
-def get_groq_api_key():
-    """Gets the Groq API key from sidebar or environment/secrets."""
-    key = None
-    # 1. Check Streamlit session state (if previously entered)
-    if 'groq_api_key' in st.session_state and st.session_state.groq_api_key:
-        key = st.session_state.groq_api_key
-    
-    # 2. Check environment/secrets
-    if not key:
-        key = os.getenv("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY", None)
-
-    # If key is not found, prompt in sidebar
-    with st.sidebar:
-        st.subheader("🔑 Groq API Key")
-        placeholder_text = "API Key entered/found" if key else "Enter Groq API Key"
-        user_key = st.text_input(
-            "Enter your Groq API Key:",
-            type="password",
-            value=key,
-            placeholder=placeholder_text,
-            key="groq_key_input"
-        )
-        if user_key and user_key != key:
-            st.session_state.groq_api_key = user_key
-            key = user_key
-            st.rerun()
-            
-    return key
-
-
-# Page config
-st.set_page_config(
-    page_title="AfroMediBot - AI Drug Discovery",
-    page_icon="🌿",
-    layout="wide"
-)
-
-# RDKit and PDF/Audio imports remain here
 try:
     from rdkit import Chem
-    from rdkit.Chem import Descriptors
+    from rdkit.Chem import Descriptors, FilterCatalog
+    from rdkit.Chem.FilterCatalog import FilterCatalogParams
     RDKIT_AVAILABLE = True
-except:
+except ImportError:
     RDKIT_AVAILABLE = False
 
 try:
@@ -125,12 +30,86 @@ try:
     from reportlab.pdfgen import canvas
     from gtts import gTTS
     PDF_AUDIO_AVAILABLE = True
-except:
+except ImportError:
     PDF_AUDIO_AVAILABLE = False
 
 # ============================================================================
-# LOAD EMBEDDED DATABASE (Pre-filtered)
+# LLM INTEGRATION (GroqClient & Expert Analysis)
 # ============================================================================
+class GroqClient:
+    def __init__(self, api_key):
+        self.client = Groq(api_key=api_key) if LLM_AVAILABLE and api_key else None
+
+    def generate_expert_analysis(self, results_df, query_text):
+        if not self.client:
+            return "LLM service unavailable. Please check the Groq API key."
+
+        # Prepare context for the LLM
+        top_candidates_markdown = "Name | MW (Da) | QED Score | LogP\n---|---|---|---\n"
+        for _, row in results_df.head(10).iterrows():
+            name = str(row.get('name', 'Unknown'))
+            mw = f"{row.get('molecular_weight', 0):.1f}"
+            qed = f"{row.get('qed_drug_likeliness', 0):.3f}"
+            logp = f"{row.get('alogp', 0):.2f}"
+            top_candidates_markdown += f"{name} | {mw} | {qed} | {logp}\n"
+
+        system_prompt = f"""You are AfroMediBot, an AI Expert in natural products drug discovery. 
+Your task is to provide a concise, professional expert analysis report based on the screening results.
+The analysis should focus on the top candidates' drug-likeness and potential for the target {query_text}.
+
+Key Data:
+- Total Candidates: {len(results_df)}
+- Drug-like Candidates (QED >= 0.5): {results_df.get('qed_drug_likeliness', pd.Series([0])).apply(lambda x: x >= 0.5 if pd.notna(x) else False).sum()}
+- Query: {query_text}
+
+Top 10 Candidates Data (for analysis):
+{top_candidates_markdown}
+
+Structure the response with markdown headings:
+## 🔬 Expert Analysis Report
+### 1. Summary of Screening Results
+### 2. Physicochemical Assessment (Key trends in MW, LogP, QED)
+### 3. Lead Candidate Recommendation
+### 4. Next Steps (In vitro, in vivo, or synthesis recommendations)
+
+Be concise, scientific, and highlight the most promising molecule(s).
+"""
+        try:
+            response = self.client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Generate the expert analysis report for the screening: {query_text}."}
+                ],
+                temperature=0.3,
+                max_tokens=2048
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            st.error(f"LLM Error: {e}")
+            return None
+
+
+# ============================================================================
+# UTILITIES & AGENTS (Retained from original code)
+# ============================================================================
+@st.cache_data
+def get_groq_api_key():
+    """Retrieves and displays the Groq API key in the sidebar."""
+    with st.sidebar:
+        st.header("⚙️ LLM Settings")
+        api_key = st.text_input(
+            "Groq API Key",
+            type="password",
+            placeholder="Paste your Groq API Key here",
+            help="Required for 'Expert Analysis' tab.",
+            key="groq_api_key_input"
+        )
+        if api_key:
+            os.environ["GROQ_API_KEY"] = api_key
+            st.success("API Key Loaded!")
+        return api_key
+
 @st.cache_data
 def load_prefiltered_database():
     """Load your pre-filtered database that ships with the app"""
@@ -139,29 +118,20 @@ def load_prefiltered_database():
         'data/afrodb_filtered_strict.csv',
         'filtered_compounds.csv'
     ]
-    
     for path in paths:
         if os.path.exists(path):
             df = pd.read_csv(path)
             return df
-    
     return None
 
-# ============================================================================
-# PLANT AGENT & PREDICTOR AGENT (Keep as-is)
-# ============================================================================
-# The PlantAgent and PredictorAgent classes are kept exactly as they were 
-# but their methods will now be called directly by the main function instead 
-# of the ChatbotAgent.
-
 class PlantAgent:
-    # ... (Keep the exact implementation of PlantAgent and its methods) ...
     def __init__(self, df):
         self.df = df
+        # ... (Keep _load_common_names and resolve_plant_name methods as they are) ...
         self.common_name_map = self._load_common_names()
     
     def _load_common_names(self):
-        """Your existing mapping"""
+        # ... (Keep your full existing common_name_map dictionary) ...
         known_mappings = {
             'Vernonia amygdalina': 'bitter leaf, ewuro, onugbu, grawa, oriwo, ityuna, etidot, ndoleh, ewu ro',
             'Ocimum gratissimum': 'scent leaf, african basil, clove basil, nchanwu, efirin, daidoya, aramogbo',
@@ -267,7 +237,7 @@ class PlantAgent:
         return None
 
 class PredictorAgent:
-    # ... (Keep the exact implementation of PredictorAgent and its methods) ...
+    # ... (Keep all PredictorAgent methods as they are) ...
     def __init__(self):
         self.models = {}
     
@@ -294,7 +264,6 @@ class PredictorAgent:
     
     def predict_druglikeness(self, smiles):
         """Quick drug-likeness check"""
-        if not RDKIT_AVAILABLE: return None
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
             return None
@@ -314,20 +283,14 @@ class PredictorAgent:
             'hba': hba
         }
 
-# ============================================================================
-# FILTER AGENT CLASS (Keep as-is)
-# ============================================================================
 class FilterAgent:
-    # ... (Keep the exact implementation of FilterAgent and its methods) ...
+    # ... (Keep all FilterAgent methods as they are) ...
     def __init__(self, df):
         self.df = df.copy()
         if RDKIT_AVAILABLE:
-            from rdkit.Chem.FilterCatalog import FilterCatalog, FilterCatalogParams
             self.pains_params = FilterCatalogParams()
             self.pains_params.AddCatalog(FilterCatalogParams.FilterCatalogs.PAINS)
             self.pains_catalog = FilterCatalog.FilterCatalog(self.pains_params)
-        else:
-            self.pains_catalog = None
 
     def lipinski_filter(self, row):
         try:
@@ -349,7 +312,7 @@ class FilterAgent:
             return False
 
     def pains_filter(self, smiles):
-        if not RDKIT_AVAILABLE or self.pains_catalog is None:
+        if not RDKIT_AVAILABLE:
             return True
         try:
             mol = Chem.MolFromSmiles(smiles)
@@ -360,45 +323,81 @@ class FilterAgent:
             return False
 
     def apply_filters(self, filter_mode='drug_like', qed_threshold=0.5, 
-                        np_threshold=0.3, apply_pains=True):
+                      np_threshold=0.3, apply_pains=True):
         
-        # Ensure columns exist before filtering, provide defaults
-        df = self.df.copy()
-        df['molecular_weight'] = df.get('molecular_weight', 0)
-        df['alogp'] = df.get('alogp', 0)
-        df['hydrogen_bond_acceptors'] = df.get('hydrogen_bond_acceptors', 0)
-        df['hydrogen_bond_donors'] = df.get('hydrogen_bond_donors', 0)
-        df['rotatable_bond_count'] = df.get('rotatable_bond_count', 0)
-        df['topological_polar_surface_area'] = df.get('topological_polar_surface_area', 0)
-        df['qed_drug_likeliness'] = df.get('qed_drug_likeliness', 0)
-        df['np_likeness'] = df.get('np_likeness', 0)
-
-        df['lipinski_pass'] = df.apply(self.lipinski_filter, axis=1)
-        df['veber_pass'] = df.apply(self.veber_filter, axis=1)
-        df['qed_pass'] = df['qed_drug_likeliness'] >= qed_threshold
-        df['np_pass'] = df['np_likeness'] >= np_threshold
+        self.df['lipinski_pass'] = self.df.apply(self.lipinski_filter, axis=1)
+        self.df['veber_pass'] = self.df.apply(self.veber_filter, axis=1)
+        self.df['qed_pass'] = self.df['qed_drug_likeliness'] >= qed_threshold
+        self.df['np_pass'] = self.df['np_likeness'] >= np_threshold
         
         base_filters = (
-            df['lipinski_pass'] &
-            df['veber_pass'] &
-            df['qed_pass'] &
-            df['np_pass']
+            self.df['lipinski_pass'] &
+            self.df['veber_pass'] &
+            self.df['qed_pass'] &
+            self.df['np_pass']
         )
         
         if apply_pains:
-            df['pains_pass'] = df['canonical_smiles'].apply(self.pains_filter)
-            base_filters = base_filters & df['pains_pass']
+            self.df['pains_pass'] = self.df['canonical_smiles'].apply(self.pains_filter)
+            base_filters = base_filters & self.df['pains_pass']
         
-        filtered_df = df[base_filters].copy()
+        filtered_df = self.df[base_filters].copy()
         return filtered_df
-
+    
 # ============================================================================
-# PDF & AUDIO GENERATION (Keep as-is, but adapted for direct DataFrame input)
+# NEW CORE SCREENING FUNCTION
 # ============================================================================
-# ... (Keep generate_pdf_report and generate_audio_summary exactly as they are) ...
+def screen_plant_compounds(plant_name, disease_target, df_db, plant_agent):
+    """Executes the core search and filtering logic."""
+    
+    st.info(f"🌿 Screening {plant_name} for {disease_target}...")
+    
+    # 1. Search by Plant
+    compounds = plant_agent.search_by_plant(plant_name, top_n=100)
+    
+    if compounds is None or compounds.empty:
+        st.warning(f"❌ No compounds found in the database for **{plant_name}**. Try a different name.")
+        return None, None
+    
+    # 2. Apply Drug-likeness Filters
+    filter_agent = FilterAgent(compounds)
+    results_df = filter_agent.apply_filters()
+    
+    if results_df.empty:
+        st.warning(f"⚠️ Found {len(compounds)} compounds, but none passed strict drug-likeness filters (QED >= 0.5) for **{plant_name}**.")
+        return None, None
+        
+    # Sort by QED for ranking
+    if 'qed_drug_likeliness' in results_df.columns:
+        results_df = results_df.sort_values(by='qed_drug_likeliness', ascending=False)
+        
+    query_text = f"Candidates from {plant_name} for {disease_target}"
+    return results_df, query_text
 
+def view_full_database(df):
+    """Applies a default drug-likeness filter to the entire database for initial viewing."""
+    if df is None:
+        st.error("❌ No compound database loaded.")
+        return None, None
+    
+    # Apply standard filters to the entire database
+    filter_agent = FilterAgent(df)
+    filtered_df = filter_agent.apply_filters()
+    
+    st.info(f"🌿 Database loaded. Displaying **{len(filtered_df)}** drug-like compounds (QED > 0.5) from **{len(df)}** total entries.")
+    
+    # Sort by QED for ranking
+    if 'qed_drug_likeliness' in filtered_df.columns:
+        filtered_df = filtered_df.sort_values(by='qed_drug_likeliness', ascending=False)
+        
+    query_text = "Full Prefiltered Database View"
+    return filtered_df, query_text
+    
+# ============================================================================
+# PDF & AUDIO GENERATION (Retained from original code)
+# ============================================================================
 def generate_pdf_report(results_df, query):
-    """Generate research-grade PDF report"""
+    # ... (Keep the exact code for generate_pdf_report) ...
     if not PDF_AUDIO_AVAILABLE:
         return None
     
@@ -518,7 +517,7 @@ def generate_pdf_report(results_df, query):
         properties = [
             f"• Molecular Weight: {row.get('molecular_weight', 'N/A')} Da",
             f"• LogP (Lipophilicity): {row.get('alogp', 'N/A')}",
-            f"• TPSA: {row.get('topological_polar_surface_area', 'N/A')} Ų",
+            f"• TPSA: {row.get('topological_polar_surface_area', 'N/A')} \u00C5\u00B2", # Å² (Angstroms squared)
             f"• Rotatable Bonds: {row.get('rotatable_bond_count', 'N/A')}",
             f"• H-Bond Donors: {row.get('hydrogen_bond_donors', 'N/A')}",
             f"• H-Bond Acceptors: {row.get('hydrogen_bond_acceptors', 'N/A')}",
@@ -556,7 +555,7 @@ def generate_pdf_report(results_df, query):
     return buffer
     
 def generate_audio_summary(results_df, query):
-    """Generate research-grade audio summary"""
+    # ... (Keep the exact code for generate_audio_summary) ...
     if not PDF_AUDIO_AVAILABLE:
         return None
     
@@ -593,43 +592,18 @@ def generate_audio_summary(results_df, query):
     except:
         return None
 
-
 # ============================================================================
-# STREAMLIT UI (The main function is now a structured App)
+# STREAMLIT UI (Refactored)
 # ============================================================================
-
-def screen_plant_compounds(plant_name, disease_target, df, agent):
-    """Handles the plant screening logic."""
-    if df is None:
-        st.error("❌ No compound database loaded.")
-        return None, None
-        
-    with st.spinner(f"Searching for compounds in **{plant_name}**..."):
-        compounds = agent.search_by_plant(plant_name, top_n=500)
-    
-    if compounds is None or compounds.empty:
-        st.warning(f"❌ No compounds found for **{plant_name}**. Please check spelling.")
-        return None, None
-    
-    st.info(f"🌿 Found **{len(compounds)}** raw compounds for **{plant_name}**.")
-    
-    # Apply filtering (using the existing filter logic)
-    filter_agent = FilterAgent(compounds)
-    with st.spinner("Applying Drug-Likeness and PAINS filters..."):
-        # The FilterAgent's apply_filters handles the Lipinski/Veber/QED/NP/PAINS logic
-        filtered_df = filter_agent.apply_filters() 
-        
-    st.success(f"💊 **{len(filtered_df)}** drug-like candidates for **{disease_target.upper()}** (QED > 0.5).")
-    
-    # Sort by QED for ranking
-    if 'qed_drug_likeliness' in filtered_df.columns:
-        filtered_df = filtered_df.sort_values(by='qed_drug_likeliness', ascending=False)
-        
-    query_text = f"Screening: {plant_name} for {disease_target.upper()}"
-    return filtered_df, query_text
-
 def main():
-    # Remove chat-specific CSS
+    # Page config (from original code)
+    st.set_page_config(
+        page_title="AfroMediBot - AI Drug Discovery",
+        page_icon="🌿",
+        layout="wide"
+    )
+    
+    # Custom CSS (from original code)
     st.markdown("""
     <style>
     .main-header {
@@ -642,24 +616,34 @@ def main():
     </style>
     """, unsafe_allow_html=True)
     
-    # Header
+    # Header (from original code)
     st.markdown('<p class="main-header">🌿 AfroMediBot</p>', unsafe_allow_html=True)
     st.markdown('<p style="text-align: center; color: #666;">AI-Powered Drug Discovery from African Medicinal Plants</p>', unsafe_allow_html=True)
     
     # --- Sidebar for Settings (API Key is handled here) ---
     groq_api_key = get_groq_api_key()
     
-    # Initialize agents
+    # Initialize Agents and Database
     df_db = load_prefiltered_database()
     plant_agent = PlantAgent(df_db) if df_db is not None else None
     
     if df_db is None:
-        st.error("Fatal Error: Could not load compound database.")
+        st.error("Fatal Error: Could not load compound database. Ensure 'afrodb_filtered_strict.csv' is in the correct path.")
         return
-        
-    # --- Main Input Form ---
+    
+    # --- Main Input Form & Database View Buttons ---
     st.header("🔬 Drug Candidate Screening")
     
+    # 1. Button for "Prefiltered Database" view (Restored functionality)
+    if st.button("📊 View Prefiltered Database Candidates", help="Shows all compounds in the database that pass basic drug-likeness filters.", key="view_db_btn"):
+        st.session_state.analysis_report = None # Clear analysis on new run
+        results_df, query_text = view_full_database(df_db)
+        if results_df is not None:
+            st.session_state.results_df = results_df
+            st.session_state.query_text = query_text
+            st.rerun() # Re-run to display results section
+    
+    # 2. Screening Form (New Form structure)
     with st.form("screening_form"):
         col1, col2 = st.columns(2)
         
@@ -678,12 +662,12 @@ def main():
                 key="disease_select"
             )
         
-        submit_button = st.form_submit_button("🚀 Run Screening", type="primary")
+        submit_button = st.form_submit_button("🚀 Run Plant Screening", type="primary")
 
     # --- Screening Execution ---
     if submit_button and plant_name:
-        # Clear previous results if any
-        st.session_state.results_df = None
+        # Clear previous state on new search
+        st.session_state.results_df = None 
         st.session_state.query_text = None
         st.session_state.analysis_report = None
         
@@ -692,6 +676,8 @@ def main():
         if results_df is not None:
             st.session_state.results_df = results_df
             st.session_state.query_text = query_text
+            # Re-run to update the page with results
+            st.rerun() 
     
     
     # --- Results Display and Actions ---
@@ -700,7 +686,7 @@ def main():
         query_text = st.session_state.query_text
 
         st.markdown("---")
-        st.subheader(f"Results for: {query_text}")
+        st.subheader(f"Results for: **{query_text}**")
 
         # --- Tabbed Output ---
         tab_data, tab_analysis = st.tabs(["📊 Detailed Data", "🤖 Expert Analysis"])
@@ -719,7 +705,7 @@ def main():
             st.markdown("---")
             st.markdown("### 💾 Output Generation")
 
-            # PDF and Audio Downloads (Kept as before)
+            # --- KEY BUTTONS: PDF, Audio, CSV (Restored) ---
             pdf_buffer = generate_pdf_report(results_df, query_text)
             audio_buffer = generate_audio_summary(results_df, query_text)
 
@@ -730,7 +716,7 @@ def main():
                     st.download_button(
                         label="📄 Generate PDF Report",
                         data=pdf_buffer,
-                        file_name=f"{plant_name.replace(' ', '_')}_report.pdf",
+                        file_name=f"{query_text.replace(' ', '_')}_report.pdf",
                         mime="application/pdf"
                     )
                 else:
@@ -741,7 +727,7 @@ def main():
                     st.download_button(
                         label="🎧 Generate Audio Summary",
                         data=audio_buffer,
-                        file_name=f"{plant_name.replace(' ', '_')}_summary.mp3",
+                        file_name=f"{query_text.replace(' ', '_')}_summary.mp3",
                         mime="audio/mp3"
                     )
                 else:
@@ -752,16 +738,17 @@ def main():
                 st.download_button(
                     label="📥 Download Data CSV",
                     data=csv,
-                    file_name=f"{plant_name.replace(' ', '_')}_data.csv",
+                    file_name=f"{query_text.replace(' ', '_')}_data.csv",
                     mime="text/csv"
                 )
 
-        # --- Expert Analysis Tab (The new requirement) ---
+
+        # --- Expert Analysis Tab (New) ---
         with tab_analysis:
             st.markdown("### 🧠 AI-Powered Expert Analysis")
             
             if not LLM_AVAILABLE or not groq_api_key:
-                st.warning("⚠️ Groq LLM is unavailable. Please check the API key in the sidebar.")
+                st.warning("⚠️ Groq LLM is unavailable. Please check the **API key in the sidebar** to enable analysis.")
             else:
                 
                 # Check if analysis is already generated and cached in session_state
@@ -787,9 +774,17 @@ def main():
                     st.download_button(
                         label="📄 Download Analysis as TXT",
                         data=analysis_data,
-                        file_name=f"{plant_name.replace(' ', '_')}_analysis.txt",
+                        file_name=f"{query_text.replace(' ', '_')}_analysis.txt",
                         mime="text/plain"
                     )
 
 if __name__ == "__main__":
+    # Ensure session state is initialized for persistence
+    if 'results_df' not in st.session_state:
+        st.session_state.results_df = None
+    if 'query_text' not in st.session_state:
+        st.session_state.query_text = None
+    if 'analysis_report' not in st.session_state:
+        st.session_state.analysis_report = None
+
     main()
