@@ -896,13 +896,17 @@ def main():
         
         if st.button("🔊 Generate Audio"):
             if 'last_results' in st.session_state:
-                summary = f"Found {len(st.session_state.last_results)} drug candidates for {st.session_state.get('last_query', 'your query')}"
-                audio = generate_audio_summary(summary)
+                audio = generate_audio_summary(
+                    st.session_state.last_results,
+                    st.session_state.get('last_query', 'your query')
+                )
                 if audio:
                     st.audio(audio, format='audio/mp3')
+                else:
+                    st.error("Failed to generate audio")
             else:
-            st.warning("No results to summarize. Run a screening first.")    
-    
+                st.warning("No results to summarize. Run a screening first.")
+
     # Initialize chatbot
     if 'chatbot' not in st.session_state:
         st.session_state.chatbot = ChatbotAgent(df)
@@ -954,7 +958,13 @@ def main():
     
     if st.session_state.show_advanced:
         st.subheader("🔬 Advanced Analysis Tools")
-        tab1, tab2, tab3 = st.tabs(["🧬 Bioactivity", "🎯 Docking", "🔮 3D"])    
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "🧬 Bioactivity", 
+            "🎯 Docking", 
+            "🔮 3D Structure",
+            "🔬 Drug Filtering",
+            "☢️ Toxicity Analysis"
+        ])    
     # ========================================================================
     # TAB 1: BIOACTIVITY PREDICTION
     # ========================================================================
@@ -1206,6 +1216,193 @@ def main():
                     st.error(f"Error: {e}")
             else:
                 st.error("RDKit not available")
+    # ========================================================================
+# TAB 4: DRUG FILTERING
+# ========================================================================
+with tab4:
+    st.markdown("### 🔬 Drug-Likeness Filtering")
+    st.info("Apply Lipinski, Veber, PAINS, and ADMET filters")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        filter_source = st.radio(
+            "Data Source:",
+            ["Use Current Database", "Upload New CSV"],
+            key='filter_source'
+        )
+        
+        filter_df = None
+        
+        if filter_source == "Use Current Database":
+            if df is not None:
+                filter_df = df
+                st.success(f"✅ Using database: {len(filter_df):,} compounds")
+            else:
+                st.error("❌ No database loaded")
+        else:
+            filter_csv = st.file_uploader("Upload CSV", type=['csv'], key='filter_csv')
+            if filter_csv:
+                filter_df = pd.read_csv(filter_csv)
+                st.success(f"✅ Loaded {len(filter_df):,} compounds")
+    
+    with col2:
+        filter_mode = st.selectbox(
+            "Filter Mode:",
+            ["drug_like", "lead_like", "strict"],
+            key='filter_mode'
+        )
+        
+        apply_pains = st.checkbox("Apply PAINS Filter", value=True, key='apply_pains_filter')
+        qed_thresh = st.slider("QED Threshold:", 0.0, 1.0, 0.5, 0.05, key='qed_filter')
+    
+    if st.button("🔬 Apply Filters", key='run_filter'):
+        if filter_df is None:
+            st.error("Please provide data first")
+        else:
+            with st.spinner("Filtering compounds..."):
+                # Initialize FilterAgent
+                from chat_app import FilterAgent  # Import from your module
+                filter_agent = FilterAgent(filter_df)
+                
+                # Apply filters
+                filtered = filter_agent.apply_filters(
+                    filter_mode=filter_mode,
+                    qed_threshold=qed_thresh,
+                    apply_pains=apply_pains
+                )
+                
+                # Display results
+                st.success(f"✅ Filtered to {len(filtered):,} drug-like compounds")
+                
+                # Metrics
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total", f"{len(filtered):,}")
+                with col2:
+                    lipinski = filtered['lipinski_pass'].sum() if 'lipinski_pass' in filtered.columns else 0
+                    st.metric("Lipinski Pass", lipinski)
+                with col3:
+                    avg_mw = filtered['molecular_weight'].mean() if 'molecular_weight' in filtered.columns else 0
+                    st.metric("Avg MW", f"{avg_mw:.1f}")
+                with col4:
+                    avg_qed = filtered['qed_drug_likeliness'].mean() if 'qed_drug_likeliness' in filtered.columns else 0
+                    st.metric("Avg QED", f"{avg_qed:.3f}")
+                
+                # Display table
+                st.dataframe(filtered.head(50), use_container_width=True)
+                
+                # Download
+                csv = filtered.to_csv(index=False)
+                st.download_button(
+                    "📥 Download Filtered Compounds",
+                    data=csv,
+                    file_name="filtered_compounds.csv",
+                    mime="text/csv"
+                )
 
+# ========================================================================
+# TAB 5: TOXICITY ANALYSIS (Tox21)
+# ========================================================================
+with tab5:
+    st.markdown("### ☢️ Toxicity Prediction (Tox21)")
+    st.info("Predict toxicity endpoints: hERG, Ames, hepatotoxicity, etc.")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        tox_input = st.radio(
+            "Input Method:",
+            ["Upload CSV", "Paste SMILES", "Search Database"],
+            key='tox_input'
+        )
+        
+        tox_smiles = []
+        
+        if tox_input == "Upload CSV":
+            tox_csv = st.file_uploader("Upload CSV", type=['csv'], key='tox_csv')
+            if tox_csv:
+                tox_df = pd.read_csv(tox_csv)
+                col = st.selectbox("SMILES column:", tox_df.columns, key='tox_col')
+                tox_smiles = tox_df[col].dropna().tolist()[:50]
+                st.success(f"✅ Loaded {len(tox_smiles)} SMILES")
+        
+        elif tox_input == "Paste SMILES":
+            smiles_text = st.text_area("Paste SMILES:", key='tox_text')
+            if smiles_text:
+                tox_smiles = [s.strip() for s in smiles_text.split('\n') if s.strip()]
+                st.success(f"✅ {len(tox_smiles)} SMILES entered")
+        
+        else:
+            search = st.text_input("Search:", key='tox_search')
+            if search and df is not None:
+                matches = df[df['organisms'].str.contains(search, case=False, na=False)]
+                if len(matches) > 0:
+                    tox_smiles = matches['canonical_smiles'].head(20).tolist()
+                    st.success(f"✅ Found {len(tox_smiles)} compounds")
+    
+    with col2:
+        tox_endpoints = st.multiselect(
+            "Toxicity Endpoints:",
+            ["hERG Cardiotoxicity", "Ames Mutagenicity", "Hepatotoxicity", "Skin Sensitization"],
+            default=["hERG Cardiotoxicity", "Ames Mutagenicity"]
+        )
+    
+    if st.button("☢️ Predict Toxicity", key='run_tox'):
+        if not tox_smiles:
+            st.error("Please provide SMILES first")
+        else:
+            with st.spinner(f"Analyzing {len(tox_smiles)} compounds..."):
+                # Placeholder predictions (replace with real Tox21 models)
+                tox_results = []
+                
+                for smiles in tox_smiles[:30]:  # Limit to 30
+                    result = {'SMILES': smiles[:40] + '...'}
+                    
+                    # Simulate predictions
+                    if "hERG Cardiotoxicity" in tox_endpoints:
+                        result['hERG Risk'] = np.random.choice(['Low', 'Medium', 'High'], p=[0.6, 0.3, 0.1])
+                    
+                    if "Ames Mutagenicity" in tox_endpoints:
+                        result['Ames Risk'] = np.random.choice(['Negative', 'Positive'], p=[0.7, 0.3])
+                    
+                    if "Hepatotoxicity" in tox_endpoints:
+                        result['Hepatotox Risk'] = np.random.choice(['Low', 'Medium', 'High'], p=[0.5, 0.3, 0.2])
+                    
+                    if "Skin Sensitization" in tox_endpoints:
+                        result['Skin Sens Risk'] = np.random.choice(['Low', 'High'], p=[0.8, 0.2])
+                    
+                    tox_results.append(result)
+                
+                tox_results_df = pd.DataFrame(tox_results)
+                
+                # Display results
+                st.dataframe(tox_results_df, use_container_width=True)
+                
+                # Summary
+                st.subheader("📊 Toxicity Summary")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if 'hERG Risk' in tox_results_df.columns:
+                        low_herg = (tox_results_df['hERG Risk'] == 'Low').sum()
+                        st.metric("Low hERG Risk", f"{low_herg}/{len(tox_results_df)}")
+                
+                with col2:
+                    if 'Ames Risk' in tox_results_df.columns:
+                        ames_neg = (tox_results_df['Ames Risk'] == 'Negative').sum()
+                        st.metric("Ames Negative", f"{ames_neg}/{len(tox_results_df)}")
+                
+                # Download
+                csv = tox_results_df.to_csv(index=False)
+                st.download_button(
+                    "📥 Download Toxicity Report",
+                    data=csv,
+                    file_name="toxicity_predictions.csv",
+                    mime="text/csv"
+                )
+                
+                st.info("💡 Note: These are placeholder predictions. Replace with trained Tox21 models for production.")
+                
 if __name__ == "__main__":
     main()
