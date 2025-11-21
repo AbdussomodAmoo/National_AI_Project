@@ -1120,21 +1120,21 @@ def main():
                                 df.get('canonical_smiles', pd.Series()).str.contains(search_name, case=False, na=False)
                             ]'''
                             
-                            if len(matches) > 0:
-                                st.success(f"✅ Found {len(matches)} matches in database")
-                                
-                                # Show preview
-                                with st.expander("👀 View matched compounds"):
-                                    preview = matches[['name', 'organisms', 'molecular_weight', 'qed_drug_likeliness']].head(10)
-                                    st.dataframe(preview, use_container_width=True)
-                                
-                                # Extract SMILES
-                                bio_smiles = matches['canonical_smiles'].dropna().head(50).tolist()
-                                st.info(f"📊 Selected {len(bio_smiles)} compounds for analysis")
-                            else:
-                                st.warning(f"⚠️ No matches found for '{search_name}' in database")
-                                st.info("Try: plant name (e.g., 'neem'), compound name, or SMILES string")
-                
+                        if len(matches) > 0:
+                            st.success(f"✅ Found {len(matches)} matches in database")
+                            
+                            # Show preview
+                            with st.expander("👀 View matched compounds"):
+                                preview = matches[['name', 'organisms', 'molecular_weight', 'qed_drug_likeliness']].head(10)
+                                st.dataframe(preview, use_container_width=True)
+                            
+                            # Extract SMILES
+                            bio_smiles = matches['canonical_smiles'].dropna().head(50).tolist()
+                            st.info(f"📊 Selected {len(bio_smiles)} compounds for analysis")
+                        else:
+                            st.warning(f"⚠️ No matches found for '{search_name}' in database")
+                            st.info("Try: plant name (e.g., 'neem'), compound name, or SMILES string")
+            
             with col2:
                 target = st.selectbox(
                     "Select Target:",
