@@ -46,7 +46,7 @@ Your capabilities:
 Respond conversationally and scientifically accurate."""
 
         response = client.chat.completions.create(
-            model="llama-3.1-70b-versatile",  # or "mixtral-8x7b-32768"
+            model="llama-3.3-70b-versatile",  # or "mixtral-8x7b-32768"
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_query}
@@ -273,7 +273,68 @@ class PredictorAgent:
             'hbd': hbd,
             'hba': hba
         }
+# ============================================================================
+# FILTER AGENT CLASS
+# ============================================================================
+class FilterAgent:
+    def __init__(self, df):
+        self.df = df.copy()
+        if RDKIT_AVAILABLE:
+            self.pains_params = FilterCatalogParams()
+            self.pains_params.AddCatalog(FilterCatalogParams.FilterCatalogs.PAINS)
+            self.pains_catalog = FilterCatalog.FilterCatalog(self.pains_params)
 
+    def lipinski_filter(self, row):
+        try:
+            mw = row['molecular_weight']
+            logp = row['alogp']
+            hba = row['hydrogen_bond_acceptors']
+            hbd = row['hydrogen_bond_donors']
+            rules = [mw <= 500, logp <= 5, hba <= 10, hbd <= 5]
+            return sum(rules) >= 3
+        except:
+            return False
+
+    def veber_filter(self, row):
+        try:
+            rotatable_bonds = row['rotatable_bond_count']
+            tpsa = row['topological_polar_surface_area']
+            return (rotatable_bonds <= 10) and (tpsa <= 140)
+        except:
+            return False
+
+    def pains_filter(self, smiles):
+        if not RDKIT_AVAILABLE:
+            return True
+        try:
+            mol = Chem.MolFromSmiles(smiles)
+            if mol is None:
+                return False
+            return not self.pains_catalog.HasMatch(mol)
+        except:
+            return False
+
+    def apply_filters(self, filter_mode='drug_like', qed_threshold=0.5, 
+                     np_threshold=0.3, apply_pains=True):
+        
+        self.df['lipinski_pass'] = self.df.apply(self.lipinski_filter, axis=1)
+        self.df['veber_pass'] = self.df.apply(self.veber_filter, axis=1)
+        self.df['qed_pass'] = self.df['qed_drug_likeliness'] >= qed_threshold
+        self.df['np_pass'] = self.df['np_likeness'] >= np_threshold
+        
+        base_filters = (
+            self.df['lipinski_pass'] &
+            self.df['veber_pass'] &
+            self.df['qed_pass'] &
+            self.df['np_pass']
+        )
+        
+        if apply_pains:
+            self.df['pains_pass'] = self.df['canonical_smiles'].apply(self.pains_filter)
+            base_filters = base_filters & self.df['pains_pass']
+        
+        filtered_df = self.df[base_filters].copy()
+        return filtered_df
 # ============================================================================
 # CHATBOT AGENT - Main Conversational Interface
 # ============================================================================
@@ -907,10 +968,14 @@ def main():
             else:
                 st.warning("No results to summarize. Run a screening first.")
 
-    # Initialize chatbot
-    if 'chatbot' not in st.session_state:
-        st.session_state.chatbot = ChatbotAgent(df)
-        st.session_state.messages = []
+    # Initialize chatbot - ALWAYS reinitialize if df changes
+    if 'chatbot' not in st.session_state or st.session_state.chatbot.df is None:
+        if df is not None:
+            st.session_state.chatbot = ChatbotAgent(df)
+            st.session_state.messages = []
+        else:
+            st.session_state.chatbot = None
+            st.session_state.messages = []
     
     # Display chat history
     for message in st.session_state.messages:
@@ -920,6 +985,11 @@ def main():
     
     # Chat input
     if prompt := st.chat_input("Ask me anything about drug discovery..."):
+        # ADD DEBUG CHECK HERE:
+        if df is None:
+            st.error("⚠️ Database not loaded. Please upload a database in the sidebar.")
+            st.stop()
+        
         # Add user message
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
@@ -1008,7 +1078,14 @@ def main():
                         if df is None:
                             st.error("❌ Please upload database first")
                         else:
-                            # Search in multiple columns
+                            # FIRST: Resolve common name to botanical name using PlantAgent
+                            resolved_name = st.session_state.chatbot.plant_agent.resolve_plant_name(search_name)
+                            
+                            # Show resolution if different
+                            if resolved_name.lower() != search_name.lower():
+                                st.info(f"🔍 Mapped '{search_name}' → '{resolved_name}'")
+                            
+                            # THEN: Search database with BOTH original and resolved names
                             matches = df[
                                 df['organisms'].str.contains(search_name, case=False, na=False) |
                                 df.get('name', pd.Series()).str.contains(search_name, case=False, na=False) |
@@ -1262,7 +1339,7 @@ def main():
                 else:
                     with st.spinner("Filtering compounds..."):
                         # Initialize FilterAgent
-                        from chat_app import FilterAgent  # Import from your module
+                        
                         filter_agent = FilterAgent(filter_df)
                         
                         # Apply filters
