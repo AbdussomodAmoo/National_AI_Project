@@ -984,11 +984,17 @@ def main():
             # This prevents the chatbot from being created with a bad df
             st.session_state.chatbot = None
     
-    # Display chat history
+    # Initialize session state FIRST
+    if 'messages' not in st.session_state:
+        st.session_state.messages = []
+    if 'chatbot' not in st.session_state:
+        st.session_state.chatbot = None
+    # Initialize/update chatbot if needed
+    if df is not None and (st.session_state.chatbot is None or st.session_state.chatbot.df is None):
+        st.session_state.chatbot = ChatbotAgent(df)
+   
+    # Display chat history (NOW messages definitely exists)
     for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-    
     
     # Chat input
     if prompt := st.chat_input("Ask me anything about drug discovery..."):
