@@ -82,7 +82,7 @@ class GroqClient:
             top_candidates_markdown += f"{name} | {mw} | {qed} | {logp}\n"
 
         system_prompt = f"""You are AfroMediBot, an AI Expert in natural products drug discovery. 
-Your task is to provide a concise, professional expert analysis report based on the screening results.
+Your task is to provide a concise, well-explained, easy to understand, professional expert analysis report based on the screening results.
 The analysis should focus on the top candidates' drug-likeness and potential for the target {query_text}.
 
 Key Data:
@@ -1543,6 +1543,106 @@ def main():
                         )
                         
                         st.info("💡 Note: These are placeholder predictions. Replace with trained Tox21 models for production.")
+# ... (Your existing code for setup, sidebar, and loading database/agent) ...
+    # ... (e.g., set_page_config, sidebar content, load_agent, load_database) ...
+
+    # --- Main Input Form ---
+    st.markdown("## 🔍 Compound Screening Tool")
+    
+    # Create the form where the 'Submit' button resides
+    with st.form("screening_form"):
+        # Assuming 'plant_name' list is available globally or loaded
+        if 'plant_names' in st.session_state and st.session_state.plant_names:
+            plant_options = st.session_state.plant_names
+            plant_name = st.selectbox(
+                "1. Select a Plant for Screening:",
+                options=plant_options,
+                key="selected_plant",
+                help="Choose a plant to screen its compounds against a target disease."
+            )
+        else:
+            plant_name = st.text_input("1. Plant Name (Data not loaded, enter manually):", key="manual_plant")
+
+        disease_target = st.text_input(
+            "2. Enter the Disease Target (e.g., 'Malaria', 'HIV', 'Diabetes'):",
+            placeholder="e.g., Type 2 Diabetes",
+            key="disease_target_input"
+        )
+        
+        # This is the "Submit" button
+        submit_button = st.form_submit_button("🧪 Submit Screening Request", type="primary")
+
+    # --- Screening Execution ---
+    # This logic runs when the 'Submit' button is pressed
+    if submit_button and plant_name:
+        # Clear previous state on new search
+        st.session_state.results_df = None 
+        st.session_state.query_text = None
+        st.session_state.analysis_report = None
+        
+        # Assuming screen_plant_compounds, df_db, and plant_agent are defined/loaded
+        results_df, query_text = screen_plant_compounds(plant_name, disease_target, df_db, plant_agent)
+        
+        if results_df is not None:
+            st.session_state.results_df = results_df
+            st.session_state.query_text = query_text
+            # Use rerun to display the results in the next block
+            st.rerun() 
+            
+    # --- Results Display and Actions ---
+    # This block only executes IF results are in session state (i.e., after a successful submission)
+    if 'results_df' in st.session_state and st.session_state.results_df is not None:
+        results_df = st.session_state.results_df
+        query_text = st.session_state.query_text
+
+        st.markdown("---")
+        st.subheader(f"Results for: **{query_text}**")
+
+        # --- Tabbed Output ---
+        # This creates the "Expert Analysis" tab
+        tab_data, tab_analysis = st.tabs(["📊 Detailed Data", "🤖 Expert Analysis"])
+        
+        # --- Detailed Data Tab Content ---
+        with tab_data:
+            st.dataframe(results_df) # Example placeholder for the main data
+            # ... (Add your PDF/Audio/CSV buttons here) ...
+
+        # --- Expert Analysis Tab (New) ---
+        with tab_analysis:
+            st.markdown("### 🧠 AI-Powered Expert Analysis")
+            
+            # Use the global groq_api_key variable (set in the sidebar)
+            groq_api_key = st.session_state.get('groq_api_key') 
+
+            if not LLM_AVAILABLE or not groq_api_key:
+                st.warning("⚠️ Groq LLM is unavailable. Please check the **API key in the sidebar** to enable analysis.")
+            else:
+                
+                # Check if analysis is already generated and cached in session_state
+                if 'analysis_report' not in st.session_state or st.session_state.analysis_report is None:
+                    # Button to trigger LLM analysis
+                    if st.button("🚀 Generate Expert Analysis Report", type="primary"):
+                        client = GroqClient(groq_api_key)
+                        with st.spinner("Contacting Groq LLM for analysis... This may take a moment."):
+                            report = client.generate_expert_analysis(results_df, query_text)
                         
+                        if report:
+                            st.session_state.analysis_report = report
+                            st.rerun()
+                        else:
+                            st.error("Could not generate AI analysis. Check API key status or Groq service.")
+                
+                # Display the generated report
+                if 'analysis_report' in st.session_state and st.session_state.analysis_report:
+                    st.markdown(st.session_state.analysis_report)
+                    
+                    # Download button for the analysis
+                    analysis_data = st.session_state.analysis_report
+                    st.download_button(
+                        label="📄 Download Analysis as TXT",
+                        data=analysis_data,
+                        file_name=f"{query_text.replace(' ', '_')}_analysis.txt",
+                        mime="text/plain"
+                    )                        
 if __name__ == "__main__":
     main()
