@@ -9,7 +9,6 @@ import warnings
 warnings.filterwarnings('ignore')
 
 
-'''
 # ============================================================================
 # LLM INTEGRATION (Groq)
 # ============================================================================
@@ -61,7 +60,7 @@ Respond conversationally and scientifically accurate."""
     except Exception as e:
         st.error(f"LLM Error: {e}")
         return None
-'''
+
 # ============================================================================
 # LLM INTEGRATION (GroqClient & Expert Analysis)
 # ============================================================================
