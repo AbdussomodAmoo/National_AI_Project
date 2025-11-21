@@ -965,257 +965,257 @@ def main():
             "🔬 Drug Filtering",
             "☢️ Toxicity Analysis"
         ])    
-    # ========================================================================
-    # TAB 1: BIOACTIVITY PREDICTION
-    # ========================================================================
-    with tab1:
-        st.markdown("### 🧬 Bioactivity Prediction")
-        st.info("Predict compound activity against disease targets (EGFR, DHFR, etc.)")
-        
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            # Input method selection
-            input_method = st.radio(
-                "Input Method:",
-                ["Upload CSV", "Paste SMILES", "Search by Plant/Compound Name"]
-            )
+        # ========================================================================
+        # TAB 1: BIOACTIVITY PREDICTION
+        # ========================================================================
+        with tab1:
+            st.markdown("### 🧬 Bioactivity Prediction")
+            st.info("Predict compound activity against disease targets (EGFR, DHFR, etc.)")
             
-            bio_smiles = []
+            col1, col2 = st.columns([2, 1])
             
-            if input_method == "Upload CSV":
-                bio_csv = st.file_uploader("Upload CSV with SMILES", type=['csv'], key='bio_csv')
-                if bio_csv:
-                    bio_df = pd.read_csv(bio_csv)
-                    smiles_col = st.selectbox("Select SMILES column:", bio_df.columns, key='bio_smiles_col')
-                    bio_smiles = bio_df[smiles_col].dropna().tolist()[:50]  # Limit to 50
-                    st.success(f"✅ Loaded {len(bio_smiles)} SMILES")
-            
-            elif input_method == "Paste SMILES":
-                smiles_input = st.text_area(
-                    "Paste SMILES (one per line):",
-                    placeholder="CCO\nCC(=O)O\nc1ccccc1",
-                    key='bio_smiles_text'
+            with col1:
+                # Input method selection
+                input_method = st.radio(
+                    "Input Method:",
+                    ["Upload CSV", "Paste SMILES", "Search by Plant/Compound Name"]
                 )
-                if smiles_input:
-                    bio_smiles = [s.strip() for s in smiles_input.split('\n') if s.strip()]
-                    st.success(f"✅ {len(bio_smiles)} SMILES entered")
-            
-            else:  # Search by name
-                search_name = st.text_input("Enter plant or compound name:", key='bio_search')
                 
-                if search_name:
-                    if df is None:
-                        st.error("❌ Please upload database first")
-                    else:
-                        # Search in multiple columns
-                        matches = df[
-                            df['organisms'].str.contains(search_name, case=False, na=False) |
-                            df.get('name', pd.Series()).str.contains(search_name, case=False, na=False) |
-                            df.get('canonical_smiles', pd.Series()).str.contains(search_name, case=False, na=False)
-                        ]
-                        
-                        if len(matches) > 0:
-                            st.success(f"✅ Found {len(matches)} matches in database")
-                            
-                            # Show preview
-                            with st.expander("👀 View matched compounds"):
-                                preview = matches[['name', 'organisms', 'molecular_weight', 'qed_drug_likeliness']].head(10)
-                                st.dataframe(preview, use_container_width=True)
-                            
-                            # Extract SMILES
-                            bio_smiles = matches['canonical_smiles'].dropna().head(50).tolist()
-                            st.info(f"📊 Selected {len(bio_smiles)} compounds for analysis")
-                        else:
-                            st.warning(f"⚠️ No matches found for '{search_name}' in database")
-                            st.info("Try: plant name (e.g., 'neem'), compound name, or SMILES string")
-            
-        with col2:
-            target = st.selectbox(
-                "Select Target:",
-                ["Cancer (EGFR)", "Malaria (DHFR)", "Diabetes (DPP4)", "HIV (Protease)", "TB (InhA)"]
-            )
-        
-        if st.button("🔬 Predict Bioactivity", key='predict_bio'):
-            if not bio_smiles:
-                st.error("Please provide SMILES first")
-            else:
-                with st.spinner("Analyzing compounds..."):
-                    results = []
-                    for smiles in bio_smiles[:20]:  # Limit to 20 for demo
-                        analysis = st.session_state.chatbot.predictor.predict_druglikeness(smiles)
-                        if analysis:
-                            results.append({
-                                'SMILES': smiles[:50] + '...',
-                                'Molecular Weight': analysis['molecular_weight'],
-                                'LogP': analysis['logp'],
-                                'Drug-like': '✅' if analysis['lipinski_pass'] else '❌',
-                                'Predicted Activity': np.random.choice(['Active', 'Inactive'], p=[0.3, 0.7])  # Placeholder
-                            })
+                bio_smiles = []
+                
+                if input_method == "Upload CSV":
+                    bio_csv = st.file_uploader("Upload CSV with SMILES", type=['csv'], key='bio_csv')
+                    if bio_csv:
+                        bio_df = pd.read_csv(bio_csv)
+                        smiles_col = st.selectbox("Select SMILES column:", bio_df.columns, key='bio_smiles_col')
+                        bio_smiles = bio_df[smiles_col].dropna().tolist()[:50]  # Limit to 50
+                        st.success(f"✅ Loaded {len(bio_smiles)} SMILES")
+                
+                elif input_method == "Paste SMILES":
+                    smiles_input = st.text_area(
+                        "Paste SMILES (one per line):",
+                        placeholder="CCO\nCC(=O)O\nc1ccccc1",
+                        key='bio_smiles_text'
+                    )
+                    if smiles_input:
+                        bio_smiles = [s.strip() for s in smiles_input.split('\n') if s.strip()]
+                        st.success(f"✅ {len(bio_smiles)} SMILES entered")
+                
+                else:  # Search by name
+                    search_name = st.text_input("Enter plant or compound name:", key='bio_search')
                     
-                    if results:
-                        results_df = pd.DataFrame(results)
-                        st.dataframe(results_df, use_container_width=True)
+                    if search_name:
+                        if df is None:
+                            st.error("❌ Please upload database first")
+                        else:
+                            # Search in multiple columns
+                            matches = df[
+                                df['organisms'].str.contains(search_name, case=False, na=False) |
+                                df.get('name', pd.Series()).str.contains(search_name, case=False, na=False) |
+                                df.get('canonical_smiles', pd.Series()).str.contains(search_name, case=False, na=False)
+                            ]
+                            
+                            if len(matches) > 0:
+                                st.success(f"✅ Found {len(matches)} matches in database")
+                                
+                                # Show preview
+                                with st.expander("👀 View matched compounds"):
+                                    preview = matches[['name', 'organisms', 'molecular_weight', 'qed_drug_likeliness']].head(10)
+                                    st.dataframe(preview, use_container_width=True)
+                                
+                                # Extract SMILES
+                                bio_smiles = matches['canonical_smiles'].dropna().head(50).tolist()
+                                st.info(f"📊 Selected {len(bio_smiles)} compounds for analysis")
+                            else:
+                                st.warning(f"⚠️ No matches found for '{search_name}' in database")
+                                st.info("Try: plant name (e.g., 'neem'), compound name, or SMILES string")
+                
+            with col2:
+                target = st.selectbox(
+                    "Select Target:",
+                    ["Cancer (EGFR)", "Malaria (DHFR)", "Diabetes (DPP4)", "HIV (Protease)", "TB (InhA)"]
+                )
+            
+            if st.button("🔬 Predict Bioactivity", key='predict_bio'):
+                if not bio_smiles:
+                    st.error("Please provide SMILES first")
+                else:
+                    with st.spinner("Analyzing compounds..."):
+                        results = []
+                        for smiles in bio_smiles[:20]:  # Limit to 20 for demo
+                            analysis = st.session_state.chatbot.predictor.predict_druglikeness(smiles)
+                            if analysis:
+                                results.append({
+                                    'SMILES': smiles[:50] + '...',
+                                    'Molecular Weight': analysis['molecular_weight'],
+                                    'LogP': analysis['logp'],
+                                    'Drug-like': '✅' if analysis['lipinski_pass'] else '❌',
+                                    'Predicted Activity': np.random.choice(['Active', 'Inactive'], p=[0.3, 0.7])  # Placeholder
+                                })
                         
-                        # Download results
-                        csv = results_df.to_csv(index=False)
+                        if results:
+                            results_df = pd.DataFrame(results)
+                            st.dataframe(results_df, use_container_width=True)
+                            
+                            # Download results
+                            csv = results_df.to_csv(index=False)
+                            st.download_button(
+                                "📥 Download Results",
+                                data=csv,
+                                file_name="bioactivity_predictions.csv",
+                                mime="text/csv"
+                            )
+        
+        # ========================================================================
+        # TAB 2: MOLECULAR DOCKING
+        # ========================================================================
+        with tab2:
+            st.markdown("### 🎯 Molecular Docking")
+            st.info("Simulate compound binding to protein targets")
+            
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                dock_input = st.radio(
+                    "Input Method:",
+                    ["Upload CSV", "Paste SMILES", "Search Database"],
+                    key='dock_input'
+                )
+                
+                dock_smiles = []
+                
+                if dock_input == "Upload CSV":
+                    dock_csv = st.file_uploader("Upload CSV", type=['csv'], key='dock_csv')
+                    if dock_csv:
+                        dock_df = pd.read_csv(dock_csv)
+                        col = st.selectbox("SMILES column:", dock_df.columns, key='dock_col')
+                        dock_smiles = dock_df[col].dropna().tolist()[:10]
+                        st.success(f"✅ {len(dock_smiles)} compounds")
+                
+                elif dock_input == "Paste SMILES":
+                    smiles_text = st.text_area("Paste SMILES:", key='dock_text')
+                    if smiles_text:
+                        dock_smiles = [s.strip() for s in smiles_text.split('\n') if s.strip()]
+                        st.success(f"✅ {len(dock_smiles)} SMILES")
+                
+                else:
+                    search = st.text_input("Search:", key='dock_search')
+                    if search and df is not None:
+                        matches = df[df['organisms'].str.contains(search, case=False, na=False)]
+                        if len(matches) > 0:
+                            dock_smiles = matches['canonical_smiles'].head(10).tolist()
+                            st.success(f"✅ {len(dock_smiles)} compounds")
+            
+            with col2:
+                protein = st.selectbox(
+                    "Target Protein:",
+                    ["Cancer EGFR", "Malaria DHFR", "HIV Protease", "TB InhA"]
+                )
+                exhaustiveness = st.slider("Exhaustiveness:", 1, 10, 8)
+            
+            if st.button("🎯 Run Docking", key='run_dock'):
+                if not dock_smiles:
+                    st.error("Please provide SMILES")
+                else:
+                    with st.spinner(f"Docking {len(dock_smiles)} compounds..."):
+                        # Placeholder results
+                        dock_results = []
+                        for smiles in dock_smiles:
+                            dock_results.append({
+                                'SMILES': smiles[:40] + '...',
+                                'Binding Energy (kcal/mol)': round(np.random.uniform(-12, -5), 2),
+                                'Binding Affinity': np.random.choice(['Strong', 'Moderate', 'Weak']),
+                                'Status': '✅ Success'
+                            })
+                        
+                        dock_df = pd.DataFrame(dock_results).sort_values('Binding Energy (kcal/mol)')
+                        st.dataframe(dock_df, use_container_width=True)
+                        
+                        st.success(f"✅ Docked {len(dock_results)} compounds")
+                        
+                        csv = dock_df.to_csv(index=False)
                         st.download_button(
-                            "📥 Download Results",
+                            "📥 Download Docking Results",
                             data=csv,
-                            file_name="bioactivity_predictions.csv",
+                            file_name="docking_results.csv",
                             mime="text/csv"
                         )
-    
-    # ========================================================================
-    # TAB 2: MOLECULAR DOCKING
-    # ========================================================================
-    with tab2:
-        st.markdown("### 🎯 Molecular Docking")
-        st.info("Simulate compound binding to protein targets")
         
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            dock_input = st.radio(
-                "Input Method:",
-                ["Upload CSV", "Paste SMILES", "Search Database"],
-                key='dock_input'
-            )
+        # ========================================================================
+        # TAB 3: 3D STRUCTURE GENERATION
+        # ========================================================================
+        with tab3:
+            st.markdown("### 🔮 3D Molecule Structure Generation")
+            st.info("Generate and visualize 3D molecular structures")
             
-            dock_smiles = []
+            col1, col2 = st.columns([2, 1])
             
-            if dock_input == "Upload CSV":
-                dock_csv = st.file_uploader("Upload CSV", type=['csv'], key='dock_csv')
-                if dock_csv:
-                    dock_df = pd.read_csv(dock_csv)
-                    col = st.selectbox("SMILES column:", dock_df.columns, key='dock_col')
-                    dock_smiles = dock_df[col].dropna().tolist()[:10]
-                    st.success(f"✅ {len(dock_smiles)} compounds")
+            with col1:
+                viz_input = st.radio(
+                    "Input Method:",
+                    ["Single SMILES", "Search Compound", "Upload CSV"],
+                    key='viz_input'
+                )
+                
+                viz_smiles = None
+                
+                if viz_input == "Single SMILES":
+                    viz_smiles = st.text_input("Enter SMILES:", key='viz_smiles')
+                
+                elif viz_input == "Search Compound":
+                    search = st.text_input("Search compound name:", key='viz_search')
+                    if search and df is not None:
+                        matches = df[df.get('name', pd.Series()).str.contains(search, case=False, na=False)]
+                        if len(matches) > 0:
+                            selected = st.selectbox("Select compound:", matches['name'].head(10).tolist())
+                            viz_smiles = matches[matches['name'] == selected]['canonical_smiles'].iloc[0]
+                
+                else:
+                    viz_csv = st.file_uploader("Upload CSV", type=['csv'], key='viz_csv')
+                    if viz_csv:
+                        viz_df = pd.read_csv(viz_csv)
+                        col = st.selectbox("SMILES column:", viz_df.columns, key='viz_col')
+                        selected_idx = st.selectbox("Select compound:", range(min(20, len(viz_df))))
+                        viz_smiles = viz_df[col].iloc[selected_idx]
             
-            elif dock_input == "Paste SMILES":
-                smiles_text = st.text_area("Paste SMILES:", key='dock_text')
-                if smiles_text:
-                    dock_smiles = [s.strip() for s in smiles_text.split('\n') if s.strip()]
-                    st.success(f"✅ {len(dock_smiles)} SMILES")
+            with col2:
+                view_style = st.selectbox("Style:", ["Stick", "Ball & Stick", "Space-filling"])
+                show_hydrogens = st.checkbox("Show Hydrogens", value=False)
             
-            else:
-                search = st.text_input("Search:", key='dock_search')
-                if search and df is not None:
-                    matches = df[df['organisms'].str.contains(search, case=False, na=False)]
-                    if len(matches) > 0:
-                        dock_smiles = matches['canonical_smiles'].head(10).tolist()
-                        st.success(f"✅ {len(dock_smiles)} compounds")
-        
-        with col2:
-            protein = st.selectbox(
-                "Target Protein:",
-                ["Cancer EGFR", "Malaria DHFR", "HIV Protease", "TB InhA"]
-            )
-            exhaustiveness = st.slider("Exhaustiveness:", 1, 10, 8)
-        
-        if st.button("🎯 Run Docking", key='run_dock'):
-            if not dock_smiles:
-                st.error("Please provide SMILES")
-            else:
-                with st.spinner(f"Docking {len(dock_smiles)} compounds..."):
-                    # Placeholder results
-                    dock_results = []
-                    for smiles in dock_smiles:
-                        dock_results.append({
-                            'SMILES': smiles[:40] + '...',
-                            'Binding Energy (kcal/mol)': round(np.random.uniform(-12, -5), 2),
-                            'Binding Affinity': np.random.choice(['Strong', 'Moderate', 'Weak']),
-                            'Status': '✅ Success'
-                        })
-                    
-                    dock_df = pd.DataFrame(dock_results).sort_values('Binding Energy (kcal/mol)')
-                    st.dataframe(dock_df, use_container_width=True)
-                    
-                    st.success(f"✅ Docked {len(dock_results)} compounds")
-                    
-                    csv = dock_df.to_csv(index=False)
-                    st.download_button(
-                        "📥 Download Docking Results",
-                        data=csv,
-                        file_name="docking_results.csv",
-                        mime="text/csv"
-                    )
-    
-    # ========================================================================
-    # TAB 3: 3D STRUCTURE GENERATION
-    # ========================================================================
-    with tab3:
-        st.markdown("### 🔮 3D Molecule Structure Generation")
-        st.info("Generate and visualize 3D molecular structures")
-        
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            viz_input = st.radio(
-                "Input Method:",
-                ["Single SMILES", "Search Compound", "Upload CSV"],
-                key='viz_input'
-            )
-            
-            viz_smiles = None
-            
-            if viz_input == "Single SMILES":
-                viz_smiles = st.text_input("Enter SMILES:", key='viz_smiles')
-            
-            elif viz_input == "Search Compound":
-                search = st.text_input("Search compound name:", key='viz_search')
-                if search and df is not None:
-                    matches = df[df.get('name', pd.Series()).str.contains(search, case=False, na=False)]
-                    if len(matches) > 0:
-                        selected = st.selectbox("Select compound:", matches['name'].head(10).tolist())
-                        viz_smiles = matches[matches['name'] == selected]['canonical_smiles'].iloc[0]
-            
-            else:
-                viz_csv = st.file_uploader("Upload CSV", type=['csv'], key='viz_csv')
-                if viz_csv:
-                    viz_df = pd.read_csv(viz_csv)
-                    col = st.selectbox("SMILES column:", viz_df.columns, key='viz_col')
-                    selected_idx = st.selectbox("Select compound:", range(min(20, len(viz_df))))
-                    viz_smiles = viz_df[col].iloc[selected_idx]
-        
-        with col2:
-            view_style = st.selectbox("Style:", ["Stick", "Ball & Stick", "Space-filling"])
-            show_hydrogens = st.checkbox("Show Hydrogens", value=False)
-        
-        if viz_smiles and st.button("🔮 Generate 3D Structure", key='gen_3d'):
-            if RDKIT_AVAILABLE:
-                try:
-                    mol = Chem.MolFromSmiles(viz_smiles)
-                    if mol:
-                        # Generate 2D image
-                        img = Draw.MolToImage(mol, size=(400, 400))
-                        st.image(img, caption="2D Structure")
-                        
-                        # Molecular properties
-                        st.subheader("📊 Molecular Properties")
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("Molecular Weight", f"{Descriptors.MolWt(mol):.1f}")
-                        with col2:
-                            st.metric("LogP", f"{Descriptors.MolLogP(mol):.2f}")
-                        with col3:
-                            st.metric("H-Bond Donors", Descriptors.NumHDonors(mol))
-                        
-                        st.info("💡 3D interactive visualization coming soon! For now, download as SDF/PDB.")
-                        
-                        # Export options
-                        st.download_button(
-                            "📥 Download SDF",
-                            data=Chem.MolToMolBlock(mol),
-                            file_name="molecule.sdf",
-                            mime="chemical/x-mdl-sdfile"
-                        )
-                    else:
-                        st.error("Invalid SMILES")
-                except Exception as e:
-                    st.error(f"Error: {e}")
-            else:
-                st.error("RDKit not available")
+            if viz_smiles and st.button("🔮 Generate 3D Structure", key='gen_3d'):
+                if RDKIT_AVAILABLE:
+                    try:
+                        mol = Chem.MolFromSmiles(viz_smiles)
+                        if mol:
+                            # Generate 2D image
+                            img = Draw.MolToImage(mol, size=(400, 400))
+                            st.image(img, caption="2D Structure")
+                            
+                            # Molecular properties
+                            st.subheader("📊 Molecular Properties")
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("Molecular Weight", f"{Descriptors.MolWt(mol):.1f}")
+                            with col2:
+                                st.metric("LogP", f"{Descriptors.MolLogP(mol):.2f}")
+                            with col3:
+                                st.metric("H-Bond Donors", Descriptors.NumHDonors(mol))
+                            
+                            st.info("💡 3D interactive visualization coming soon! For now, download as SDF/PDB.")
+                            
+                            # Export options
+                            st.download_button(
+                                "📥 Download SDF",
+                                data=Chem.MolToMolBlock(mol),
+                                file_name="molecule.sdf",
+                                mime="chemical/x-mdl-sdfile"
+                            )
+                        else:
+                            st.error("Invalid SMILES")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+                else:
+                    st.error("RDKit not available")
     # ========================================================================
 # TAB 4: DRUG FILTERING
 # ========================================================================
