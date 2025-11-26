@@ -6,6 +6,10 @@ import os
 import base64
 from io import BytesIO
 import warnings
+from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+
 warnings.filterwarnings('ignore')
 
 
@@ -52,15 +56,18 @@ Respond conversationally and scientifically accurate."""
                 {"role": "user", "content": user_query}
             ],
             temperature=0.7,
-            max_tokens=2048
+            max_tokens=2048,
+            stream=stream
         )
-        
-        return response.choices[0].message.content
+        if stream:
+            return response  # Return generator for streaming
+        else:
+            return response.choices[0].message.content
     
     except Exception as e:
         st.error(f"LLM Error: {e}")
         return None
-
+        
 # ============================================================================
 # LLM INTEGRATION (GroqClient & Expert Analysis)
 # ============================================================================
@@ -1091,47 +1098,56 @@ def main():
     #        st.session_state.chatbot = None
     
     # Initialize session state FIRST
-    if 'messages' not in st.session_state:
-        st.session_state.messages = []
-    if 'chatbot' not in st.session_state:
-        st.session_state.chatbot = None
-    # Initialize/update chatbot if needed
-    if df is not None and (st.session_state.chatbot is None or st.session_state.chatbot.df is None):
-        st.session_state.chatbot = ChatbotAgent(df)
+    # Initialize session state using LangChain message format
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = []
+    if 'chatbot' not in st.session_state or df is not None:
+        st.session_state.chatbot = ChatbotAgent(df) if df is not None else None
    
     # Display chat history (NOW messages definitely exists)
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    # Display chat history using LangChain messages
+    for message in st.session_state.chat_history:
+        if isinstance(message, HumanMessage):
+            with st.chat_message("user"):
+                st.markdown(message.content)
+        elif isinstance(message, AIMessage):
+            with st.chat_message("assistant"):
+                st.markdown(message.content)
     
     # Chat input
-    if prompt := st.chat_input("Ask me anything about drug discovery..."):
-        # ADD DEBUG CHECK HERE:
+    # Chat input with LangChain message handling
+    user_query = st.chat_input("Ask me anything about drug discovery...")
+    
+    if user_query is not None and user_query != "":
+        # Database check
         if df is None:
             st.error("⚠️ Database not loaded. Please upload a database in the sidebar.")
             st.stop()
         
-        # Add user message
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+        # Add user message to history
+        st.session_state.chat_history.append(HumanMessage(content=user_query))
         
-        # Get bot response
+        # Display user message
+        with st.chat_message("user"):
+            st.markdown(user_query)
+        
+        # Get and display bot response
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                # Try structured response first
-                response = st.session_state.chatbot.chat(prompt, uploaded_smiles)
+                # Get response from chatbot
+                response = st.session_state.chatbot.chat(user_query, uploaded_smiles)
                 
-                # If default/unclear response, try LLM
+                # Try LLM if response is unclear
                 if ("I'm not sure" in response or "Let me help" in response) and LLM_AVAILABLE:
                     context = f"Database has {len(df)} compounds" if df is not None else "No database loaded"
-                    llm_response = get_llm_response(prompt, context)
+                    llm_response = get_llm_response(user_query, context)
                     if llm_response:
                         response = f"🤖 **AI Assistant:**\n\n{llm_response}\n\n---\n\n{response}"
                 
                 st.markdown(response)
         
-        st.session_state.messages.append({"role": "assistant", "content": response})
+        # Add AI response to history
+        st.session_state.chat_history.append(AIMessage(content=response))
 
     # ========================================================================
     # ADVANCED FEATURES TABS
