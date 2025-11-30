@@ -4,7 +4,7 @@ import pandas as pd
 import os
 from io import BytesIO
 import base64
-
+from PIL import Image
 # ============================================================================
 # PAGE CONFIGURATION
 # ============================================================================
@@ -129,7 +129,7 @@ except ImportError:
 # Google Vision
 try:
     from google.cloud import vision
-    from PIL import Image
+    
     VISION_AVAILABLE = True
 except ImportError:
     VISION_AVAILABLE = False
