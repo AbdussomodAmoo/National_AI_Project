@@ -18,3 +18,4 @@ stmol
 google-cloud-vision
 transformers
 biopython
+ipython_genutils
