@@ -6,8 +6,14 @@ from io import BytesIO
 import base64
 from PIL import Image
 from google.cloud import vision
-VISION_AVAILABLE = True
+from Bio import Entrez
+from groq import Groq
+import json
+import time
 
+
+VISION_AVAILABLE = True
+LITERATURE_AVAILABLE = True
 
 # ============================================================================
 # PAGE CONFIGURATION
@@ -109,16 +115,6 @@ st.markdown("""
 # ============================================================================
 # LOAD DEPENDENCIES
 # ============================================================================
-
-# Literature Mining
-try:
-    from Bio import Entrez
-    from groq import Groq
-    import json
-    import time
-    LITERATURE_AVAILABLE = True
-except ImportError:
-    LITERATURE_AVAILABLE = False
 
 # 3D Visualization
 try:
@@ -368,7 +364,8 @@ with st.sidebar:
     if groq_api_key:
         os.environ["GROQ_API_KEY"] = groq_api_key
         Entrez.email = st.text_input("Email (for PubMed)", value="your_email@example.com")
-    
+    else:
+        st.warning("Biopython not installed, PubMed features disabled.")
     # Google Vision Credentials
     vision_creds = st.file_uploader("Google Vision Credentials (JSON)", type=['json'])
     if vision_creds:
