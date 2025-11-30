@@ -1,2 +1,4 @@
 openbabel
 autodock-vina
+libsm6
+libxext6
