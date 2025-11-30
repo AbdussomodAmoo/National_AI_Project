@@ -307,7 +307,7 @@ def identify_plant_google_vision(image_file, credentials_path):
 # ============================================================================
 
 with st.sidebar:
-    st.image("https://via.placeholder.com/200x80/2E7D32/FFFFFF?text=AfroMediBot", use_container_width=True)
+    st.image("https://via.placeholder.com/200x80/2E7D32/FFFFFF?text=AfroMediBot", width='stretch')
     st.markdown("---")
     
     st.subheader("⚙️ API Configuration")
@@ -437,17 +437,17 @@ with tab_home:
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("🔍 Search Literature", use_container_width=True, type="primary", key="home_search_lit"):
+        if st.button("🔍 Search Literature", width='stretch', type="primary", key="home_search_lit"):
             st.session_state.active_tab = "literature"
             st.rerun()
     
     with col2:
-        if st.button("🧊 View 3D Molecules", use_container_width=True, type="primary", key="home_view_3d"):
+        if st.button("🧊 View 3D Molecules", width='stretch', type="primary", key="home_view_3d"):
             st.session_state.active_tab = "3d"
             st.rerun()
     
     with col3:
-        if st.button("🌿 Identify Plant", use_container_width=True, type="primary", key="home_identify_plant"):
+        if st.button("🌿 Identify Plant", width='stretch', type="primary", key="home_identify_plant"):
             st.session_state.active_tab = "plant"
             st.rerun()
     
@@ -465,7 +465,7 @@ with tab_home:
     cols = st.columns(3)
     for idx, query in enumerate(example_queries):
         with cols[idx]:
-            if st.button(query["title"], use_container_width=True, key=f"example_query_{idx}"):
+            if st.button(query["title"], width='stretch', key=f"example_query_{idx}"):
                 st.session_state.example_plant = query["plant"]
                 st.session_state.example_disease = query["disease"]
                 st.session_state.active_tab = "literature"
@@ -483,7 +483,7 @@ with tab_home:
     cols = st.columns(3)
     for idx, mol in enumerate(example_mols):
         with cols[idx]:
-            if st.button(f"View {mol['name']}", use_container_width=True, key=f"example_mol_{idx}"):
+            if st.button(f"View {mol['name']}", width='stretch', key=f"example_mol_{idx}"):
                 st.session_state.example_smiles = mol["smiles"]
                 st.session_state.example_mol_name = mol["name"]
                 st.session_state.active_tab = "3d"
@@ -514,7 +514,7 @@ with tab_literature:
     
     with col2:
         max_papers = st.slider("Maximum Papers", 5, 50, 15)
-        search_button = st.button("🔍 Search Literature", type="primary", use_container_width=True, key="lit_search_btn")
+        search_button = st.button("🔍 Search Literature", type="primary", width='stretch', key="lit_search_btn")
     
     if search_button and plant_name and disease_name:
         if not LITERATURE_AVAILABLE:
@@ -644,10 +644,10 @@ with tab_plant:
         col1, col2 = st.columns([1, 1])
         
         with col1:
-            st.image(image, caption="Uploaded Image", use_container_width=True)
+            st.image(image, caption="Uploaded Image", width='stretch')
         
         with col2:
-            if st.button("🔍 Identify Plant", type="primary", use_container_width=True, key="plant_identify_btn"):
+            if st.button("🔍 Identify Plant", type="primary", width='stretch', key="plant_identify_btn"):
                 if not vision_creds:
                     st.error("Please upload Google Vision credentials in sidebar")
                 else:
