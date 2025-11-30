@@ -125,19 +125,29 @@ st.markdown("""
 # RETROSYNTHESIS
 #=====================================================
 # NOTE: Replace 'YOUR_GOOGLE_DRIVE_FILE_ID_HERE' with the ID you get from the shared zip link.
-GDRIVE_FILE_ID = "https://drive.google.com/file/d/1Vu3YUCwq8KQu7vMmRKKZxhzfCWtvj0ud/view?usp=drive_link" 
-MODEL_PATH = "/content/drive/MyDrive/retrosynthesis_model.zip" # This is the internal directory name
+GDRIVE_FILE_ID = "1Vu3YUCwq8KQu7vMmRKKZxhzfCWtvj0ud" 
+MODEL_PATH = "retrosynthesis_model" # This is the internal directory name
 RETROSYNTHESIS_ZIP = "retrosynthesis_model.zip"
-if os.path.exists(MODEL_PATH) and os.path.exists(os.path.join(MODEL_PATH, "pytorch_model.bin")):
-        RETROSYNTHESIS_AVAILABLE = True
-else:
-    # If files are missing, the feature is disabled
+
+try:
+    from transformers import T5Tokenizer, T5ForConditionalGeneration
+    import torch
+    import shutil # Make sure shutil is imported near the top with other standard libs
+    
+    # Check if the required local files exist AFTER the first successful extraction.
+    # This prevents the app from trying to download on every run once the files are present.
+    required_file = os.path.join(MODEL_PATH, "tokenizer_config.json")
+    RETROSYNTHESIS_AVAILABLE = os.path.exists(required_file)
+
+except ImportError:
     RETROSYNTHESIS_AVAILABLE = False
 
 @st.cache_resource(show_spinner=False)
 def load_retrosynthesis_model():
     """Loads the T5 model, downloading and extracting it from Drive if necessary."""
-    
+
+    # Check 1: Use the global availability check flag for early exit
+    global RETROSYNTHESIS_AVAILABLE
     # 1. Check if the model is already downloaded
     required_file = os.path.join(MODEL_PATH, "tokenizer_config.json")
     if os.path.exists(required_file):
@@ -172,6 +182,7 @@ def load_retrosynthesis_model():
             
             st.success("Model downloaded and extracted successfully!")
             os.remove(RETROSYNTHESIS_ZIP) # Clean up the zip file
+            RETROSYNTHESIS_AVAILABLE = True # Update global flag on success
             
         except Exception as e:
             st.error(f"Failed to download/extract model from Drive. Check File ID and sharing permissions.")
