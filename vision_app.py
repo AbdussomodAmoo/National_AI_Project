@@ -655,6 +655,21 @@ with tab_plant:
                         try:
                             uploaded_image.seek(0)  # Reset file pointer
                             labels, entities = identify_plant_google_vision(uploaded_image, 'vision-credentials.json')
+
+                            # --- NEW STEP 1: Extract the most likely species name ---
+                            identified_species_name = extract_plant_species(labels, entities)
+
+                            # --- Display the main result clearly ---
+                            st.subheader("🌿 Primary Identification")
+                            
+                            if identified_species_name != "Unknown plant":
+                                st.success(f"**Identified Species:** **{identified_species_name}**")
+                            else:
+                                st.warning("Could not definitively identify species.")
+                                
+                            st.markdown("---")
+                            
+                            # --- Display Details (Labels and Entities) ---
                             
                             st.subheader("🏷️ Detected Labels")
                             for label in labels[:5]:
@@ -662,14 +677,28 @@ with tab_plant:
                             
                             st.subheader("🌿 Plant Identification")
                             if entities:
+                                # --- Display specific scientific and relevant entities ---
+                                found_entity = False
                                 for entity in entities[:3]:
-                                    if entity.description:
-                                        st.success(f"✅ Possible match: **{entity.description}**")
+                                    # Filter for entities that look like names or specific details
+                                    if entity.description and (entity.description.lower() not in ['plant', 'leaf', 'tree'] or entity.score > 0.6):
+                                        st.success(f"✅ Possible match: **{entity.description}** (Score: {entity.score:.2f})")
+                                        found_entity = True
+                                if not found_entity:
+                                    st.info("No highly specific web entities found.")
                             else:
                                 st.warning("Could not identify specific species. Try a clearer image.")
-                        
+
+                            # --- NEW STEP 2: Add action button to search literature ---
+                            st.markdown("---")
+                            if st.button(f"📚 Find Literature for {identified_species_name}", key="search_lit_from_plant", type="secondary"):
+                                # Set session state variables to automatically fill the Literature tab
+                                st.session_state.example_plant = identified_species_name
+                                st.session_state.active_tab = "literature"
+                                st.rerun()
                         except Exception as e:
-                            st.error(f"Error: {e}")
+                            st.error(f"Error during Vision API analysis: {e}")
+                            st.exception(e)
 
 # ============================================================================
 # FOOTER
