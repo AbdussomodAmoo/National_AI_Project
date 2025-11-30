@@ -18,6 +18,7 @@ from stmol import showmol
 
 VISION_AVAILABLE = True
 LITERATURE_AVAILABLE = True
+RDKIT_AVAILABLE = True
 
 # ============================================================================
 # PAGE CONFIGURATION
