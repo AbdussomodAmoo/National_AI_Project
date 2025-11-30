@@ -17,3 +17,4 @@ py3Dmol
 stmol
 google-cloud-vision
 transformers
+Bio
