@@ -5,14 +5,8 @@ import os
 from io import BytesIO
 import base64
 from PIL import Image
-#from google.cloud import vision
-# Google Vision
-try:
-    from google.cloud import vision
-    
-    VISION_AVAILABLE = True
-except ImportError:
-    VISION_AVAILABLE = False
+from google.cloud import vision
+VISION_AVAILABLE = True
 
 
 # ============================================================================
