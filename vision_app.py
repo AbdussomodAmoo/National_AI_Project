@@ -300,24 +300,59 @@ def identify_plant_google_vision(image_file, credentials_path):
     return labels, web_entities
 
 def extract_plant_species(labels, entities):
-    """Extract most likely plant species name"""
+    """Extract most likely plant species nameby prioritizing high-score 
+    and specific entries from Web Entities over generic labels. The function aims to find scientific names or specific common names."""
     
     plant_keywords = ['plant', 'leaf', 'flower', 'tree', 'herb', 'botanical']
     
-    # Priority 1: Web entities (most specific)
-    for entity in entities:
-        desc = entity.description.lower()
-        # Look for scientific names (usually contain species)
-        if any(keyword in desc for keyword in plant_keywords):
-            return entity.description
+    # --- Priority 1: High-Confidence, Specific Web Entities ---
     
-    # Priority 2: Labels with high confidence
+    # 1. Search for a very high-confidence scientific/common name (Score >= 0.90)
+    for entity in entities:
+        desc = entity.description
+        score = entity.score
+        
+        # Check for scientific format (Genus species) or common high-score match
+        if score >= 0.90:
+            # If it looks like a scientific name (two words capitalized), or is highly specific
+            if len(desc.split()) >= 2 and desc[0].isupper() and desc.split()[1][0].islower():
+                return desc # e.g., 'Moringa oleifera' or 'Azadirachta indica'
+            
+            # Or if it's a known common name with very high score
+            if score >= 0.95 and desc.lower() not in plant_keywords:
+                return desc # e.g., 'Moringa' or 'Neem'
+
+    # 2. Search for the best scientific/specific entity, regardless of the generic keywords
+    best_entity = None
+    best_score = 0.0
+    
+    for entity in entities:
+        desc = entity.description.strip()
+        score = entity.score
+        
+        # Filter out overly generic terms that aren't useful as primary identification
+        if desc.lower() in ['leaf', 'plant', 'herb', 'vegetation', 'food']:
+            continue
+
+        # Look for a specific entity with the highest score
+        if score > best_score:
+            best_score = score
+            best_entity = desc
+
+    if best_entity and best_score > 0.65: # Only return if confidence is reasonably high
+        return best_entity
+
+    # --- Priority 2: High-Confidence Generic Label (Fallback) ---
+
     for label in labels:
-        if label.score > 0.8 and 'plant' in label.description.lower():
-            return label.description
+        desc = label.description.strip()
+        score = label.score
+        
+        if score > 0.80 and desc.lower() not in plant_keywords:
+            return desc # e.g., 'Phyllanthaceae' (Family name)
 
-    return "Unknown plant"
-
+    # --- Priority 3: Fail Gracefully ---
+    return "Unknown species (Low confidence)"
 # ============================================================================
 # SIDEBAR CONFIGURATION
 # ============================================================================
