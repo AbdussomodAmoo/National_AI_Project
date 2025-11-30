@@ -299,6 +299,25 @@ def identify_plant_google_vision(image_file, credentials_path):
     
     return labels, web_entities
 
+def extract_plant_species(labels, entities):
+    """Extract most likely plant species name"""
+    
+    plant_keywords = ['plant', 'leaf', 'flower', 'tree', 'herb', 'botanical']
+    
+    # Priority 1: Web entities (most specific)
+    for entity in entities:
+        desc = entity.description.lower()
+        # Look for scientific names (usually contain species)
+        if any(keyword in desc for keyword in plant_keywords):
+            return entity.description
+    
+    # Priority 2: Labels with high confidence
+    for label in labels:
+        if label.score > 0.8 and 'plant' in label.description.lower():
+            return label.description
+
+    return "Unknown plant"
+
 # ============================================================================
 # SIDEBAR CONFIGURATION
 # ============================================================================
