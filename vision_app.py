@@ -128,6 +128,11 @@ st.markdown("""
 GDRIVE_FILE_ID = "https://drive.google.com/file/d/1Vu3YUCwq8KQu7vMmRKKZxhzfCWtvj0ud/view?usp=drive_link" 
 MODEL_PATH = "/content/drive/MyDrive/retrosynthesis_model.zip" # This is the internal directory name
 RETROSYNTHESIS_ZIP = "retrosynthesis_model.zip"
+if os.path.exists(MODEL_PATH) and os.path.exists(os.path.join(MODEL_PATH, "pytorch_model.bin")):
+        RETROSYNTHESIS_AVAILABLE = True
+else:
+    # If files are missing, the feature is disabled
+    RETROSYNTHESIS_AVAILABLE = False
 
 @st.cache_resource(show_spinner=False)
 def load_retrosynthesis_model():
@@ -189,7 +194,30 @@ def load_retrosynthesis_model():
         st.exception(e)
         return None, None, None
 
-
+@st.cache_data(show_spinner=False)
+def predict_retrosynthesis(model, tokenizer, device, product_smiles):
+    """Generates the predicted reactant SMILES from the product SMILES."""
+    if model is None:
+        return "Model not loaded."
+        
+    input_ids = tokenizer.encode(
+        product_smiles, 
+        return_tensors="pt", 
+        max_length=512, 
+        truncation=True
+    ).to(device)
+    
+    # Generate prediction (using beam search for quality)
+    outputs = model.generate(
+        input_ids,
+        max_length=512,
+        num_beams=15, 
+        early_stopping=True
+    )
+    
+    predicted_smiles = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    return predicted_smiles
+    
 
 # ============================================================================
 # LITERATURE MINING FUNCTIONS
@@ -448,11 +476,12 @@ with st.sidebar:
 # MAIN APP - TAB NAVIGATION
 # ============================================================================
 
-tab_home, tab_literature, tab_3d, tab_plant = st.tabs([
+tab_home, tab_literature, tab_3d, tab_plant, tab_synthesis = st.tabs([
     "🏠 Home",
     "📚 Literature Mining",
     "🧊 3D Molecule Viewer",
-    "🌿 Plant Recognition"
+    "🌿 Plant Recognition",
+    "🧪 Retrosynthesis"
 ])
 
 # ============================================================================
@@ -811,6 +840,80 @@ with tab_plant:
                         except Exception as e:
                             st.error(f"Error during Vision API analysis: {e}")
                             st.exception(e)
+# ============================================================================
+# TAB 5: RETROSYNTHESIS
+# ============================================================================
+
+with tab_synthesis:
+    st.header("🧪 AI-Powered Retrosynthesis")
+    st.info("Predict the reactants and synthetic route for a lead compound using a fine-tuned T5 model.")
+    
+    if not RETROSYNTHESIS_AVAILABLE:
+        st.warning(
+            "Retrosynthesis feature is disabled. "
+            "Please ensure you have installed `torch` and `transformers` and saved "
+            "your trained model in the `./retrosynthesis_model` directory."
+        )
+    else:
+        # Load the model only if available
+        model, tokenizer, device = load_retrosynthesis_model()
+        
+        if model:
+            st.success(f"✅ Retrosynthesis Model loaded successfully. Running on {device}.")
+            
+            st.markdown("---")
+            
+            target_smiles = st.text_input(
+                "Enter Target Product SMILES",
+                value='CC(=O)OC1=CC=CC=C1C(=O)O', # Example: Aspirin
+                placeholder="e.g., CC1=CC=C(C=C1)C(O)=O"
+            )
+            
+            if st.button("🔮 Predict Synthesis Route", type="primary", key="retro_predict_btn"):
+                if target_smiles:
+                    with st.spinner(f"Predicting reactants for {target_smiles}..."):
+                        # Perform prediction
+                        predicted_reactants = predict_retrosynthesis(
+                            model, tokenizer, device, target_smiles
+                        )
+                    
+                    st.subheader("💡 Predicted Route")
+                    
+                    # Display structures using RDKit (since it's now available)
+                    if RDKIT_AVAILABLE:
+                        col_p, col_r = st.columns(2)
+                        
+                        # Display Product
+                        with col_p:
+                            st.markdown("#### Target Product")
+                            mol_p = Chem.MolFromSmiles(target_smiles)
+                            if mol_p:
+                                img_p = Draw.MolToImage(mol_p, size=(300, 300))
+                                st.image(img_p)
+                            else:
+                                st.error("Invalid Product SMILES.")
+    
+                        # Display Predicted Reactants (molecules separated by '.')
+                        with col_r:
+                            st.markdown("#### Predicted Reactants")
+                            predicted_mol_smiles = [s.strip() for s in predicted_reactants.split('.') if s.strip()] 
+                            
+                            if predicted_mol_smiles:
+                                for i, r_smiles in enumerate(predicted_mol_smiles[:3]): # Show up to 3 reactants
+                                    mol_r = Chem.MolFromSmiles(r_smiles)
+                                    if mol_r:
+                                        img_r = Draw.MolToImage(mol_r, size=(250, 250))
+                                        st.image(img_r, caption=f"Reactant {i+1}")
+                                        
+                    st.markdown("---")
+                    
+                    st.markdown(f"""
+                        **Predicted Reactants (SMILES):**
+                        `{predicted_reactants}`
+                    """)
+                else:
+                    st.warning("Please enter a valid SMILES string.")
+
 
 # ============================================================================
 # FOOTER
