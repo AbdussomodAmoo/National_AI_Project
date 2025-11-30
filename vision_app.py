@@ -10,6 +10,10 @@ from Bio import Entrez
 from groq import Groq
 import json
 import time
+from rdkit import Chem
+from rdkit.Chem import AllChem, Descriptors, Draw
+import py3Dmol
+from stmol import showmol
 
 
 VISION_AVAILABLE = True
@@ -111,20 +115,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
-# ============================================================================
-# LOAD DEPENDENCIES
-# ============================================================================
-
-# 3D Visualization
-try:
-    from rdkit import Chem
-    from rdkit.Chem import AllChem, Descriptors, Draw
-    import py3Dmol
-    from stmol import showmol
-    RDKIT_AVAILABLE = True
-except ImportError:
-    RDKIT_AVAILABLE = False
 
 
 # ============================================================================
