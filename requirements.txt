@@ -6,7 +6,6 @@ scikit-learn>=1.0.0
 torch>=1.13.0
 rdkit
 joblib>=1.0.0
-py3Dmol
 reportlab
 gtts
 plotly
@@ -16,3 +15,5 @@ langchain==0.3.23
 python-dotenv==1.1.0
 py3Dmol
 stmol
+google-cloud-vision
+transformers
