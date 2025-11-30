@@ -1,4 +1,3 @@
-!pip install py3Dmol stmol rdkit
 # app.py - AfroMediBot Feature Showcase
 import streamlit as st
 import pandas as pd
