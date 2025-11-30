@@ -14,6 +14,9 @@ from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors, Draw
 import py3Dmol
 from stmol import showmol
+from transformers import T5Tokenizer, T5ForConditionalGeneration
+import torch
+
 
 
 VISION_AVAILABLE = True
