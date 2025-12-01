@@ -477,6 +477,9 @@ class PlantAgent:
         Args:
             df: The main compounds DataFrame containing compound details and organism names.
         """
+        if df is None:
+            raise ValueError("DataFrame cannot be None. Please upload a compounds database first.")
+
         self.df = df.copy()
         # Pre-load the common name to scientific name map for fast lookups
         self.common_name_map: Dict[str, str] = self._load_common_names()
@@ -1060,7 +1063,7 @@ with tab_plant:
             col_btn1, col_btn2 = st.columns(2)
             
             with col_btn1:
-                map_disabled = 'compounds_df' not in st.session_state
+                map_disabled = 'compounds_df' not in st.session_state or st.session_state.compounds_df is None)
                 if st.button(
                     "🗺️ Map Plant Name", 
                     key="map_plant_name", 
@@ -1069,7 +1072,7 @@ with tab_plant:
                     disabled=map_disabled,
                     help="Map common name to scientific name and find compounds" if not map_disabled else "Upload database first"
                 ):
-                    if 'compounds_df' not in st.session_state:
+                    if 'compounds_df' not in st.session_state or st.session_state.compounds_df is None:
                         st.error("Please upload a compounds database in the sidebar first")
                     else:
                         # Initialize PlantAgent with the uploaded database
@@ -1114,13 +1117,20 @@ with tab_plant:
                             st.session_state.plant_compounds = plant_compounds
                         else:
                             st.warning(f"No compounds found for {resolved_name} in database")
+
+            except ValueError as ve:
+                st.error(f"❌ Error: {ve}")
+            except Exception as e:
+                st.error(f"❌ Unexpected error during mapping: {e}")
+                st.exception(e)
             
             # Display mapping results if they exist (persistence)
             if 'resolved_plant_name' in st.session_state and 'mapped_plant' not in st.session_state:
                 st.info(f"📋 Last mapped: **{st.session_state.resolved_plant_name}** - Click 'Map Plant Name' again to search compounds")
             
             with col_btn2:
-                filter_disabled = 'plant_compounds' not in st.session_state
+                filter_disabled = 'plant_compounds' not in st.session_state or st.session_state.plant_compounds is None or st.session_state.plant_compounds.empty)
+                      
                 if st.button(
                     "🔬 Filter Compounds", 
                     key="filter_plant_compounds", 
@@ -1129,17 +1139,22 @@ with tab_plant:
                     disabled=filter_disabled,
                     help="Filter and analyze found compounds" if not filter_disabled else "Map plant name first"
                 ):
-                    if 'plant_compounds' not in st.session_state:
+                    if 'plant_compounds' not in st.session_state or st.session_state.plant_compounds is None or st.session_state.plant_compounds.empty):
                         st.warning("Please map the plant name first")
                     else:
                         st.session_state.show_filters = True
             
             # Display filter UI (outside button, persists across reruns)
-            if st.session_state.get('show_filters', False) and 'plant_compounds' in st.session_state:
+            if (st.session_state.get('show_filters', False) and 
+                'plant_compounds' in st.session_state and 
+                st.session_state.plant_compounds is not None and
+                not st.session_state.plant_compounds.empty):
+                
                 st.markdown("---")
                 st.subheader("🎯 Compound Filtering")
                 
-                compounds = st.session_state.plant_compounds.copy()
+                try:
+                    compounds = st.session_state.plant_compounds.copy()
                 mapped_plant = st.session_state.get('mapped_plant', identified_species_name)
                 
                 st.write(f"**Source Plant:** {mapped_plant}")
@@ -1190,6 +1205,9 @@ with tab_plant:
                     file_name=f"filtered_compounds_{mapped_plant}.csv",
                     mime="text/csv"
                 )
+    except Exception as e:
+        st.error(f"❌ Error during filtering: {e}")
+        st.session_state.show_filters = False  # Reset filter state on error
 # ============================================================================
 # TAB 5: RETROSYNTHESIS
 # ============================================================================
