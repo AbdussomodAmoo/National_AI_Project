@@ -1207,9 +1207,9 @@ with tab_plant:
                     file_name=f"filtered_compounds_{mapped_plant}.csv",
                     mime="text/csv"
                 )
-    except Exception as e:
-        st.error(f"❌ Error during filtering: {e}")
-        st.session_state.show_filters = False  # Reset filter state on error
+            except Exception as e:
+                st.error(f"❌ Error during filtering: {e}")
+                st.session_state.show_filters = False  # Reset filter state on error
 # ============================================================================
 # TAB 5: RETROSYNTHESIS
 # ============================================================================
