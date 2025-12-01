@@ -1063,7 +1063,7 @@ with tab_plant:
             col_btn1, col_btn2 = st.columns(2)
             
             with col_btn1:
-                map_disabled = 'compounds_df' not in st.session_state or st.session_state.compounds_df is None)
+                map_disabled = 'compounds_df' not in st.session_state or st.session_state.compounds_df is None
                 if st.button(
                     "🗺️ Map Plant Name", 
                     key="map_plant_name", 
