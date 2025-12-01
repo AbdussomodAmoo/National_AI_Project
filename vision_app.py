@@ -454,6 +454,156 @@ def extract_plant_species(labels, entities):
     # --- Priority 3: Fail Gracefully ---
     return "Unknown species (Low confidence)"
 # ============================================================================
+# PLANT AGENT CLASS
+# ===============================================
+
+import pandas as pd
+from typing import Dict, List, Optional
+class PlantAgent:
+    """
+    An agent responsible for resolving plant names (common to scientific)
+    and searching a DataFrame for associated compounds.
+    """
+    def __init__(self, df: pd.DataFrame):
+        """
+        Initializes the agent with the compounds database DataFrame.
+
+        Args:
+            df: The main compounds DataFrame containing compound details and organism names.
+        """
+        self.df = df.copy()
+        # Pre-load the common name to scientific name map for fast lookups
+        self.common_name_map: Dict[str, str] = self._load_common_names()
+    
+    def _load_common_names(self) -> Dict[str, str]:
+        """
+        Creates a map of common names (and synonyms) to their canonical
+        scientific (botanical) names. This logic is the core of name resolution.
+        
+        Returns:
+            A dictionary mapping lowercased common names to scientific names.
+        """
+        known_mappings = {
+            'Vernonia amygdalina': 'bitter leaf, ewuro, onugbu, grawa, oriwo, ityuna, etidot, ndoleh, ewu ro',
+            'Ocimum gratissimum': 'scent leaf, african basil, clove basil, nchanwu, efirin, daidoya, aramogbo',
+            'Ocimum viride': 'scent leaf, green basil, tea bush',
+            'Garcinia kola': 'bitter kola, orogbo, aki ilu, miji-goro, adi',
+            'Cola nitida': 'kola nut, cola nut, goro, obi, gworo',
+            'Cola acuminata': 'kola nut, abata cola, obi abata',
+            'Xylopia aethiopica': 'african pepper, negro pepper, grains of selim, uda, kimba, kani pepper, ethiopian pepper, hwentia',
+            'Azadirachta indica': 'neem, dogoyaro, dongoyaro, nim tree, margosa tree, vepai',
+            'Moringa oleifera': 'moringa, drumstick tree, horseradish tree, zogale, okweoyibo, ewe igbale',
+            'Hibiscus sabdariffa': 'roselle, zobo, sorrel, soborodo, isapa, yakuwa',
+            'Cymbopogon citratus': 'lemon grass, fever grass, lemon grass tea, kooko oba, tsaida',
+            'Aloe vera': 'aloe, aloe vera, ahon erin',
+            'Aloe barbadensis': 'aloe vera, barbados aloe',
+            'Carica papaya': 'papaya, pawpaw, ibepe, gwanda',
+            'Psidium guajava': 'guava, gova, gofa',
+            'Annona muricata': 'soursop, graviola, abo, fasadarur',
+            'Chrysophyllum albidum': 'african star apple, agbalumo, udara, udala, alasa',
+            'Homo sapiens': 'human',
+            'Citrullus lanatus': 'watermelon, egusi, kankana',
+            'Mus musculus': 'mouse',
+            'Panax ginseng': 'asian ginseng, korean ginseng, red ginseng, ginseng',
+            'Arabidopsis thaliana': 'thale cress, mouse-ear cress',
+            'Vitis vinifera': 'grape, wine grape, common grape vine',
+            'Ganoderma lucidum': 'reishi mushroom, lingzhi, reishi',
+            'Angelica sinensis': 'dong quai, female ginseng, chinese angelica, dang gui',
+            'Glycyrrhiza uralensis': 'chinese licorice, gan cao',
+            'Citrus reticulata': 'mandarin orange, tangerine, mandarin, osan wewe',
+            'Escherichia coli': 'e. coli, e coli',
+            'Zingiber officinale': 'ginger, ata-ile, citta, jinja',
+            'Lonicera japonica': 'japanese honeysuckle, jin yin hua, honeysuckle',
+            'Capsicum annuum': 'bell pepper, chili pepper, sweet pepper, ata rodo, barkono',
+            'Angelica acutiloba': 'japanese angelica',
+            'Humulus lupulus': 'hops, common hops',
+            'Foeniculum vulgare': 'fennel, sweet fennel, fennel seed',
+            'Daucus carota': 'carrot, wild carrot, karas',
+            'Chrysanthemum x morifolium': 'florist chrysanthemum, mum, ju hua',
+            'Artemisia annua L.': 'sweet wormwood, sweet annie, annual wormwood, qing hao',
+            'Artemisia annua': 'sweet wormwood, sweet annie, annual wormwood, qing hao',
+            'Vitex negundo': 'chinese chaste tree, five-leaved chaste tree, nirgundi',
+            'Angelica gigas': 'korean angelica, cham danggui',
+            'Chaenomeles sinensis': 'chinese quince, flowering quince, mu gua',
+            'Sophora flavescens': 'shrubby sophora, ku shen',
+            'Morus alba': 'white mulberry, mulberry, sang',
+            'Artemisia argyi': 'silvery wormwood, chinese mugwort, ai ye',
+            'Artemisia capillaris': 'capillary wormwood, yin chen',
+            'Curcuma longa': 'turmeric, haldi, atale pupa, gangamau',
+            'Punica granatum': 'pomegranate, anar, pome',
+            'Schisandra chinensis': 'five-flavor berry, magnolia vine, wu wei zi',
+            'Citrus sinensis': 'sweet orange, orange, osan mimu',
+            'Chrysanthemum indicum': 'indian chrysanthemum, wild chrysanthemum',
+            'Zea mays': 'corn, maize, agbado, masara',
+            'Lyngbya majuscula': 'sea hair, fireweed',
+            'Syzygium aromaticum': 'clove, kanafuru, clove spice',
+            'Gardenia jasminoides': 'cape jasmine, gardenia, zhi zi',
+            'Glycyrrhiza glabra': 'licorice, liquorice, sweet root',
+            'Gynostemma pentaphyllum': 'jiaogulan, immortality herb, southern ginseng',
+            'Murraya paniculata': 'orange jasmine, mock orange, chinese box',
+            'Citrus unshiu': 'satsuma mandarin, satsuma, unshiu orange',
+            'Camellia sinensis': 'tea plant, tea, green tea, black tea, tii',
+            'Ginkgo biloba': 'ginkgo, maidenhair tree, bai guo',
+            'Nelumbo nucifera': 'sacred lotus, lotus, indian lotus, lian',
+            'Melia azedarach': 'chinaberry tree, bead tree, persian lilac, dogo yaro',
+            'Ephedra sinica': 'chinese ephedra, ma huang, joint fir',
+            'Mangifera indica': 'mango, mangoro, mangwaro',
+            'Curcuma kwangsiensis': 'guangxi turmeric, kwangsi turmeric',
+            'Hypericum perforatum': 'st johns wort, st. johns wort, hypericum',
+            'Pastinaca sativa': 'parsnip, wild parsnip',
+            'Allium sativum': 'garlic, aayu, tafarnuwa, ayuu',
+            'Pogostemon cablin': 'patchouli, patchouli oil plant',
+            'Periploca sepium': 'chinese silk vine, xiang jia pi',
+            'Curcuma zedoaria': 'white turmeric, zedoary, kua',
+            'Glycine max': 'soybean, soya bean, soy',
+            'Curcuma wenyujin': 'wenjin turmeric, wen yu jin',
+            'Streptomyces': 'streptomyces bacteria',
+            'Penicillium': 'penicillium mold, penicillium fungi',
+            'Aspergillus': 'aspergillus mold, aspergillus fungi',
+        }
+        
+        mapping = {}
+        for botanical, common_names_str in known_mappings.items():
+            for name in common_names_str.split(','):
+                name = name.strip().lower()
+                if name:
+                    mapping[name] = botanical
+                    
+        # Also map scientific names to themselves (for exact searches)
+        for name in known_mappings.keys():
+             mapping[name.lower()] = name
+             
+        return mapping
+    
+    def resolve_plant_name(self, plant_name: str) -> str:
+        """
+        Resolves a user-provided plant name (common or scientific) to its 
+        canonical scientific name using the loaded map.
+
+        Args:
+            plant_name: The input string from the user.
+
+        Returns:
+            The resolved scientific name, or the original input if no map found.
+        """
+        lower_name = plant_name.lower().strip()
+        # If found in the common name map, return the scientific name
+        resolved_name = self.common_name_map.get(lower_name)
+    def search_by_plant(self, plant_name, top_n=50):
+        resolved = self.resolve_plant_name(plant_name)
+        
+        if 'organisms' in self.df.columns:
+            results = self.df[self.df['organisms'].str.contains(resolved, case=False, na=False)]
+            
+            if results.empty and resolved.lower() != plant_name.lower():
+                results = self.df[self.df['organisms'].str.contains(plant_name, case=False, na=False)]
+            
+            return results.head(top_n) if not results.empty else None
+        
+        return None
+
+
+# ============================================================================
 # SIDEBAR CONFIGURATION
 # ============================================================================
 
