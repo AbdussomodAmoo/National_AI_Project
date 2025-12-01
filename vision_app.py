@@ -26,13 +26,6 @@ LITERATURE_AVAILABLE = True
 RDKIT_AVAILABLE = True
 
 
-## Temporary sentencepiece diagnosis
-st.write("Testing SentencePiece installation...")
-try:
-    import sentencepiece
-    st.success(f"✅ SentencePiece version: {sentencepiece.__version__}")
-except ImportError as e:
-    st.error(f"❌ SentencePiece not installed: {e}")
 # ============================================================================
 # PAGE CONFIGURATION
 # ============================================================================
