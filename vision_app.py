@@ -1119,9 +1119,7 @@ with tab_plant:
                             st.warning(f"No compounds found for {resolved_name} in database")
 
             
-            except Exception as e:
-                st.error(f"❌ Unexpected error during mapping: {e}")
-                st.exception(e)
+
             
             # Display mapping results if they exist (persistence)
             if 'resolved_plant_name' in st.session_state and 'mapped_plant' not in st.session_state:
