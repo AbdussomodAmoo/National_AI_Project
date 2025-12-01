@@ -25,7 +25,13 @@ VISION_AVAILABLE = True
 LITERATURE_AVAILABLE = True
 RDKIT_AVAILABLE = True
 
-
+# Initialize session state variables
+if 'compounds_df' not in st.session_state:
+    st.session_state.compounds_df = None
+if 'mapped_plant' not in st.session_state:
+    st.session_state.mapped_plant = None
+if 'plant_compounds' not in st.session_state:
+    st.session_state.plant_compounds = None
 # ============================================================================
 # PAGE CONFIGURATION
 # ============================================================================
