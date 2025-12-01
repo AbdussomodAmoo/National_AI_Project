@@ -1118,8 +1118,7 @@ with tab_plant:
                         else:
                             st.warning(f"No compounds found for {resolved_name} in database")
 
-            except ValueError as ve:
-                st.error(f"❌ Error: {ve}")
+            
             except Exception as e:
                 st.error(f"❌ Unexpected error during mapping: {e}")
                 st.exception(e)
