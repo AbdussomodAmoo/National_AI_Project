@@ -637,7 +637,7 @@ with st.sidebar:
         st.success("✅ Vision API configured")
     
     st.markdown("---")
-    st.sidebar.markdown("### 💾 Compound Database")
+    st.sidebar.markdown("### 💾 Compounds Database")
     
     uploaded_file = st.sidebar.file_uploader(
         "Upload CSV Compound Database",
@@ -656,13 +656,16 @@ with st.sidebar:
             df_new = load_data(uploaded_file)
             if 'organisms' in df_new.columns and not df_new.empty:
                 st.session_state['database'] = df_new
+                st.session_state['compounds_df'] = df_new # for button compatibility
                 st.sidebar.success(f"Database Loaded: {len(df_new)} compounds.")
             else:
                 st.sidebar.error("CSV must contain an 'organisms' column.")
                 st.session_state['database'] = pd.DataFrame()
+                st.session_state['compounds_df'] = None
         except Exception as e:
             st.sidebar.error(f"Error loading CSV: {e}")
             st.session_state['database'] = pd.DataFrame()
+            st.session_state['database'] = None
     else:
         # Initialize the database as an empty DataFrame or check existing state
         if 'database' not in st.session_state:
@@ -670,8 +673,10 @@ with st.sidebar:
         
         if st.session_state['database'].empty:
             st.sidebar.info("Upload a CSV to enable compound searching.")
+            st.session_state['compounds_df'] = None
         else:
-            st.sidebar.success(f"Active Database: {len(st.session_state['database'])} compounds.")
+            st.sidebar.success(f"✅ Active Database: {len(st.session_state['database'])} compounds.")
+            st.session_state['compounds_df'] = st.session_state['database']
     
     
     # Initialize search results state
@@ -1063,7 +1068,13 @@ with tab_plant:
             col_btn1, col_btn2 = st.columns(2)
             
             with col_btn1:
-                map_disabled = 'compounds_df' not in st.session_state or st.session_state.compounds_df is None
+                # Check if we have both database and identified species
+                has_database = (('compounds_df' in st.session_state and st.session_state.compounds_df is not None) or
+                               ('database' in st.session_state and not st.session_state['database'].empty))
+                has_species = 'identified_species' in st.session_state
+                
+                map_disabled = not (has_database and has_species)
+                
                 if st.button(
                     "🗺️ Map Plant Name", 
                     key="map_plant_name", 
@@ -1078,8 +1089,14 @@ with tab_plant:
                         try:
                             # Get identified species from session state
                             identified_species_name = st.session_state.identified_species
-                            # Initialize PlantAgent with the uploaded database
-                            plant_agent = PlantAgent(st.session_state.compounds_df)
+                            # Get database from session state (try both keys)
+                            db_df = st.session_state.get('compounds_df') or st.session_state.get('database')
+                            
+                            if db_df is None or db_df.empty:
+                                st.error("⚠️ Database is empty or not loaded properly")
+                            else:
+                                # Initialize PlantAgent with the uploaded database
+                                plant_agent = PlantAgent(db_df)
                             
                             # Resolve the plant name
                             resolved_name = plant_agent.resolve_plant_name(identified_species_name)
