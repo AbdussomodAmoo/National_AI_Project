@@ -25,6 +25,14 @@ VISION_AVAILABLE = True
 LITERATURE_AVAILABLE = True
 RDKIT_AVAILABLE = True
 
+
+## Temporary sentencepiece diagnosis
+st.write("Testing SentencePiece installation...")
+try:
+    import sentencepiece
+    st.success(f"✅ SentencePiece version: {sentencepiece.__version__}")
+except ImportError as e:
+    st.error(f"❌ SentencePiece not installed: {e}")
 # ============================================================================
 # PAGE CONFIGURATION
 # ============================================================================
@@ -132,8 +140,7 @@ RETROSYNTHESIS_ZIP = "retrosynthesis_model.zip"
 try:
     from transformers import T5Tokenizer, T5ForConditionalGeneration
     import torch
-    import shutil # Make sure shutil is imported near the top with other standard libs
-    
+    import shutil 
     # Check if the required local files exist AFTER the first successful extraction.
     # This prevents the app from trying to download on every run once the files are present.
     required_file = os.path.join(MODEL_PATH, "tokenizer_config.json")
@@ -195,7 +202,7 @@ def load_retrosynthesis_model():
         st.info(f"Loading model into memory (Device: {device})...")
 
         # Load the tokenizer and model from the extracted directory
-        from transformers import T5TokenizerFast
+        from transformers import T5TokenizerFast, T5ForConditionalGeneration
         tokenizer = T5TokenizerFast.from_pretrained(MODEL_PATH)
         model = T5ForConditionalGeneration.from_pretrained(MODEL_PATH).to(device)
         
