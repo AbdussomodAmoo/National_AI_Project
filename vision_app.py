@@ -195,8 +195,8 @@ def load_retrosynthesis_model():
         st.info(f"Loading model into memory (Device: {device})...")
 
         # Load the tokenizer and model from the extracted directory
-        from transformers import AutoTokenizer
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
+        from transformers import T5TokenizerFast
+        tokenizer = T5TokenizerFast.from_pretrained(MODEL_PATH)
         model = T5ForConditionalGeneration.from_pretrained(MODEL_PATH).to(device)
         
         return model, tokenizer, device
