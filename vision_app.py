@@ -1129,7 +1129,7 @@ with tab_plant:
                 st.info(f"📋 Last mapped: **{st.session_state.resolved_plant_name}** - Click 'Map Plant Name' again to search compounds")
             
             with col_btn2:
-                filter_disabled = 'plant_compounds' not in st.session_state or st.session_state.plant_compounds is None or st.session_state.plant_compounds.empty)
+                filter_disabled = 'plant_compounds' not in st.session_state or st.session_state.plant_compounds is None or st.session_state.plant_compounds.empty
                       
                 if st.button(
                     "🔬 Filter Compounds", 
