@@ -1076,6 +1076,8 @@ with tab_plant:
                         st.error("Please upload a compounds database in the sidebar first")
                     else:
                         try:
+                            # Get identified species from session state
+                            identified_species_name = st.session_state.identified_species
                             # Initialize PlantAgent with the uploaded database
                             plant_agent = PlantAgent(st.session_state.compounds_df)
                             
