@@ -1075,50 +1075,55 @@ with tab_plant:
                     if 'compounds_df' not in st.session_state or st.session_state.compounds_df is None:
                         st.error("Please upload a compounds database in the sidebar first")
                     else:
-                        # Initialize PlantAgent with the uploaded database
-                        plant_agent = PlantAgent(st.session_state.compounds_df)
-                        
-                        # Resolve the plant name
-                        resolved_name = plant_agent.resolve_plant_name(identified_species_name)
-                        
-                        # Store resolved name
-                        st.session_state.resolved_plant_name = resolved_name
-                        
-                        st.subheader("🔍 Mapping Results")
-                        
-                        if resolved_name.lower() != identified_species_name.lower():
-                            st.success(f"**Common Name:** {identified_species_name}")
-                            st.success(f"**Scientific Name:** {resolved_name}")
-                        else:
-                            st.info(f"**Name:** {resolved_name}")
-                        
-                        # Search for compounds from this plant
-                        plant_compounds = plant_agent.search_by_plant(resolved_name, top_n=50)
-                        
-                        if plant_compounds is not None and not plant_compounds.empty:
-                            st.subheader(f"💊 Found {len(plant_compounds)} Compounds")
+                        try:
+                            # Initialize PlantAgent with the uploaded database
+                            plant_agent = PlantAgent(st.session_state.compounds_df)
                             
-                            # Display key columns
-                            display_cols = []
-                            if 'compound_name' in plant_compounds.columns:
-                                display_cols.append('compound_name')
-                            if 'smiles' in plant_compounds.columns:
-                                display_cols.append('smiles')
-                            if 'organisms' in plant_compounds.columns:
-                                display_cols.append('organisms')
+                            # Resolve the plant name
+                            resolved_name = plant_agent.resolve_plant_name(identified_species_name)
                             
-                            if display_cols:
-                                st.dataframe(plant_compounds[display_cols].head(10))
+                            # Store resolved name
+                            st.session_state.resolved_plant_name = resolved_name
+                            
+                            st.subheader("🔍 Mapping Results")
+                            
+                            if resolved_name.lower() != identified_species_name.lower():
+                                st.success(f"**Common Name:** {identified_species_name}")
+                                st.success(f"**Scientific Name:** {resolved_name}")
                             else:
-                                st.dataframe(plant_compounds.head(10))
+                                st.info(f"**Name:** {resolved_name}")
                             
-                            # Store for filtering
-                            st.session_state.mapped_plant = resolved_name
-                            st.session_state.plant_compounds = plant_compounds
-                        else:
-                            st.warning(f"No compounds found for {resolved_name} in database")
+                            # Search for compounds from this plant
+                            plant_compounds = plant_agent.search_by_plant(resolved_name, top_n=50)
+                            
+                            if plant_compounds is not None and not plant_compounds.empty:
+                                st.subheader(f"💊 Found {len(plant_compounds)} Compounds")
+                                
+                                # Display key columns
+                                display_cols = []
+                                if 'compound_name' in plant_compounds.columns:
+                                    display_cols.append('compound_name')
+                                if 'smiles' in plant_compounds.columns:
+                                    display_cols.append('smiles')
+                                if 'organisms' in plant_compounds.columns:
+                                    display_cols.append('organisms')
+                                
+                                if display_cols:
+                                    st.dataframe(plant_compounds[display_cols].head(10))
+                                else:
+                                    st.dataframe(plant_compounds.head(10))
+                                
+                                # Store for filtering
+                                st.session_state.mapped_plant = resolved_name
+                                st.session_state.plant_compounds = plant_compounds
+                            else:
+                                st.warning(f"No compounds found for {resolved_name} in database")
 
-            
+                        except ValueError as ve:
+                            st.error(f"❌ Error: {ve}")
+                        except Exception as e:
+                            st.error(f"❌ Unexpected error during mapping: {e}")
+                            st.exception(e)
 
             
             # Display mapping results if they exist (persistence)
