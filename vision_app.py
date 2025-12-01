@@ -1157,59 +1157,59 @@ with tab_plant:
                 
                 try:
                     compounds = st.session_state.plant_compounds.copy()
-                mapped_plant = st.session_state.get('mapped_plant', identified_species_name)
-                
-                st.write(f"**Source Plant:** {mapped_plant}")
-                st.write(f"**Total Compounds:** {len(compounds)}")
-                
-                # Add filtering options
-                filter_col1, filter_col2 = st.columns(2)
-                
-                with filter_col1:
-                    # Molecular weight filter (if available)
-                    if 'molecular_weight' in compounds.columns:
-                        mw_min = float(compounds['molecular_weight'].min())
-                        mw_max = float(compounds['molecular_weight'].max())
-                        mw_range = st.slider(
-                            "Molecular Weight Range",
-                            mw_min,
-                            mw_max,
-                            (mw_min, mw_max),
-                            key="mw_slider"
-                        )
-                        compounds = compounds[
-                            (compounds['molecular_weight'] >= mw_range[0]) & 
-                            (compounds['molecular_weight'] <= mw_range[1])
-                        ]
-                
-                with filter_col2:
-                    # Activity filter (if available)
-                    if 'activity_type' in compounds.columns:
-                        activities = compounds['activity_type'].unique().tolist()
-                        selected_activities = st.multiselect(
-                            "Filter by Activity",
-                            activities,
-                            default=activities[:3] if len(activities) > 3 else activities,
-                            key="activity_filter"
-                        )
-                        if selected_activities:
-                            compounds = compounds[compounds['activity_type'].isin(selected_activities)]
-                
-                # Display filtered results
-                st.write(f"**Filtered Results:** {len(compounds)} compounds")
-                st.dataframe(compounds)
-                
-                # Download option
-                csv = compounds.to_csv(index=False)
-                st.download_button(
-                    "📥 Download Filtered Compounds",
-                    data=csv,
-                    file_name=f"filtered_compounds_{mapped_plant}.csv",
-                    mime="text/csv"
-                )
-            except Exception as e:
-                st.error(f"❌ Error during filtering: {e}")
-                st.session_state.show_filters = False  # Reset filter state on error
+                    mapped_plant = st.session_state.get('mapped_plant', identified_species_name)
+                    
+                    st.write(f"**Source Plant:** {mapped_plant}")
+                    st.write(f"**Total Compounds:** {len(compounds)}")
+                    
+                    # Add filtering options
+                    filter_col1, filter_col2 = st.columns(2)
+                    
+                    with filter_col1:
+                        # Molecular weight filter (if available)
+                        if 'molecular_weight' in compounds.columns:
+                            mw_min = float(compounds['molecular_weight'].min())
+                            mw_max = float(compounds['molecular_weight'].max())
+                            mw_range = st.slider(
+                                "Molecular Weight Range",
+                                mw_min,
+                                mw_max,
+                                (mw_min, mw_max),
+                                key="mw_slider"
+                            )
+                            compounds = compounds[
+                                (compounds['molecular_weight'] >= mw_range[0]) & 
+                                (compounds['molecular_weight'] <= mw_range[1])
+                            ]
+                    
+                    with filter_col2:
+                        # Activity filter (if available)
+                        if 'activity_type' in compounds.columns:
+                            activities = compounds['activity_type'].unique().tolist()
+                            selected_activities = st.multiselect(
+                                "Filter by Activity",
+                                activities,
+                                default=activities[:3] if len(activities) > 3 else activities,
+                                key="activity_filter"
+                            )
+                            if selected_activities:
+                                compounds = compounds[compounds['activity_type'].isin(selected_activities)]
+                    
+                    # Display filtered results
+                    st.write(f"**Filtered Results:** {len(compounds)} compounds")
+                    st.dataframe(compounds)
+                    
+                    # Download option
+                    csv = compounds.to_csv(index=False)
+                    st.download_button(
+                        "📥 Download Filtered Compounds",
+                        data=csv,
+                        file_name=f"filtered_compounds_{mapped_plant}.csv",
+                        mime="text/csv"
+                    )
+                except Exception as e:
+                    st.error(f"❌ Error during filtering: {e}")
+                    st.session_state.show_filters = False  # Reset filter state on error
 # ============================================================================
 # TAB 5: RETROSYNTHESIS
 # ============================================================================
