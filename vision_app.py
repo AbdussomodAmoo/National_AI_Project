@@ -311,13 +311,13 @@ Analyze these research papers about {plant_name} for {disease} treatment:
 
 Provide a structured analysis:
 
-1. **Evidence Strength**: Rate LOW/MEDIUM/HIGH based on number of papers, study types, and results consistency
-2. **Active Compounds**: List specific chemical compounds mentioned with their activities
-3. **Mechanisms of Action**: Explain HOW the plant compounds work against {disease}
-4. **Key Findings**: Summarize the most important discoveries (IC50 values, clinical outcomes, etc.)
-5. **Research Gaps**: What's missing or needs more study?
+#1. **Evidence Strength**: Rate LOW/MEDIUM/HIGH based on number of papers, study types, and results consistency
+1. **Active Compounds**: List specific chemical compounds mentioned with their activities
+2. **Mechanisms of Action**: Explain HOW the plant compounds work against {disease}
+3. **Key Findings**: Summarize the most important discoveries (IC50 values, clinical outcomes, etc.)
+4. **Research Gaps**: What's missing or needs more study?
 
-Be concise, scientific, and cite paper numbers when making claims."""
+Be simple for a layman to understand, concise, scientific, and cite paper numbers when making claims."""
     
     try:
         response = groq_client.chat.completions.create(
@@ -1013,7 +1013,126 @@ with tab_plant:
                                 st.warning("Could not definitively identify species.")
                                 
                             st.markdown("---")
+
+                            # Adding the filter buttons
                             
+                            col_btn1, col_btn2 = st.columns(2)
+                            
+                            with col_btn1:
+                                if st.button(
+                                    f"🗺️ Map Plant Name", 
+                                    key="map_plant_name", 
+                                    type="secondary",
+                                    use_container_width=True,
+                                    disabled='compounds_df' not in st.session_state
+                                ):
+                                    if 'compounds_df' not in st.session_state:
+                                        st.error("Please upload a compounds database in the sidebar first")
+                                    else:
+                                        # Initialize PlantAgent with the uploaded database
+                                        plant_agent = PlantAgent(st.session_state.compounds_df)
+                                        
+                                        # Resolve the plant name
+                                        resolved_name = plant_agent.resolve_plant_name(identified_species_name)
+                                        
+                                        st.subheader("🔍 Mapping Results")
+                                        
+                                        if resolved_name.lower() != identified_species_name.lower():
+                                            st.success(f"**Common Name:** {identified_species_name}")
+                                            st.success(f"**Scientific Name:** {resolved_name}")
+                                        else:
+                                            st.info(f"**Name:** {resolved_name}")
+                                        
+                                        # Search for compounds from this plant
+                                        plant_compounds = plant_agent.search_by_plant(resolved_name, top_n=10)
+                                        
+                                        if plant_compounds is not None and not plant_compounds.empty:
+                                            st.subheader(f"💊 Found {len(plant_compounds)} Compounds")
+                                            
+                                            # Display key columns
+                                            display_cols = []
+                                            if 'compound_name' in plant_compounds.columns:
+                                                display_cols.append('compound_name')
+                                            if 'smiles' in plant_compounds.columns:
+                                                display_cols.append('smiles')
+                                            if 'organisms' in plant_compounds.columns:
+                                                display_cols.append('organisms')
+                                            
+                                            if display_cols:
+                                                st.dataframe(plant_compounds[display_cols].head(10))
+                                            else:
+                                                st.dataframe(plant_compounds.head(10))
+                                            
+                                            # Store for filtering
+                                            st.session_state.mapped_plant = resolved_name
+                                            st.session_state.plant_compounds = plant_compounds
+                                        else:
+                                            st.warning(f"No compounds found for {resolved_name} in database")
+
+
+                            with col_btn2:
+                                if st.button(
+                                    f"🔬 Filter Compounds", 
+                                    key="filter_plant_compounds", 
+                                    type="primary",
+                                    use_container_width=True,
+                                    disabled='plant_compounds' not in st.session_state
+                                ):
+                                    if 'plant_compounds' not in st.session_state:
+                                        st.warning("Please map the plant name first")
+                                    else:
+                                        st.subheader("🎯 Compound Filtering")
+                                        
+                                        compounds = st.session_state.plant_compounds
+                                        mapped_plant = st.session_state.get('mapped_plant', identified_species_name)
+                                        
+                                        st.write(f"**Source Plant:** {mapped_plant}")
+                                        st.write(f"**Total Compounds:** {len(compounds)}")
+                                        
+                                        # Add filtering options
+                                        filter_col1, filter_col2 = st.columns(2)
+                                        
+                                        with filter_col1:
+                                            # Molecular weight filter (if available)
+                                            if 'molecular_weight' in compounds.columns:
+                                                mw_range = st.slider(
+                                                    "Molecular Weight Range",
+                                                    float(compounds['molecular_weight'].min()),
+                                                    float(compounds['molecular_weight'].max()),
+                                                    (float(compounds['molecular_weight'].min()), 
+                                                     float(compounds['molecular_weight'].max()))
+                                                )
+                                                compounds = compounds[
+                                                    (compounds['molecular_weight'] >= mw_range[0]) & 
+                                                    (compounds['molecular_weight'] <= mw_range[1])
+                                                ]
+                                        
+                                        with filter_col2:
+                                            # Activity filter (if available)
+                                            if 'activity_type' in compounds.columns:
+                                                activities = compounds['activity_type'].unique().tolist()
+                                                selected_activities = st.multiselect(
+                                                    "Filter by Activity",
+                                                    activities,
+                                                    default=activities[:3] if len(activities) > 3 else activities
+                                                )
+                                                if selected_activities:
+                                                    compounds = compounds[compounds['activity_type'].isin(selected_activities)]
+                                        
+                                        # Display filtered results
+                                        st.write(f"**Filtered Results:** {len(compounds)} compounds")
+                                        st.dataframe(compounds)
+                                        
+                                        # Download option
+                                        csv = compounds.to_csv(index=False)
+                                        st.download_button(
+                                            "📥 Download Filtered Compounds",
+                                            data=csv,
+                                            file_name=f"filtered_compounds_{mapped_plant}.csv",
+                                            mime="text/csv"
+                                        )
+
+                                    
                             # --- Display Details (Labels and Entities) ---
                             
                             st.subheader("🏷️ Detected Labels")
