@@ -628,7 +628,49 @@ with st.sidebar:
         st.success("✅ Vision API configured")
     
     st.markdown("---")
+    st.sidebar.markdown("### 💾 Compound Database")
     
+    uploaded_file = st.sidebar.file_uploader(
+        "Upload CSV Compound Database",
+        type=['csv'],
+        key="database_uploader"
+    )
+    # Caching function to load the data efficiently
+    @st.cache_data
+    def load_data(file):
+        # This function is called only when the file changes
+        return pd.read_csv(file)
+    
+    # Handle file upload and state update
+    if uploaded_file is not None:
+        try:
+            df_new = load_data(uploaded_file)
+            if 'organisms' in df_new.columns and not df_new.empty:
+                st.session_state['database'] = df_new
+                st.sidebar.success(f"Database Loaded: {len(df_new)} compounds.")
+            else:
+                st.sidebar.error("CSV must contain an 'organisms' column.")
+                st.session_state['database'] = pd.DataFrame()
+        except Exception as e:
+            st.sidebar.error(f"Error loading CSV: {e}")
+            st.session_state['database'] = pd.DataFrame()
+    else:
+        # Initialize the database as an empty DataFrame or check existing state
+        if 'database' not in st.session_state:
+            st.session_state['database'] = pd.DataFrame()
+        
+        if st.session_state['database'].empty:
+            st.sidebar.info("Upload a CSV to enable compound searching.")
+        else:
+            st.sidebar.success(f"Active Database: {len(st.session_state['database'])} compounds.")
+    
+    
+    # Initialize search results state
+    if 'search_results' not in st.session_state:
+        st.session_state['search_results'] = pd.DataFrame()
+    if 'resolved_name' not in st.session_state:
+        st.session_state['resolved_name'] = ""
+        
     st.subheader("📊 Quick Stats")
     st.metric("Plants in Database", "500+")
     st.metric("Compounds Analyzed", "50,000+")
