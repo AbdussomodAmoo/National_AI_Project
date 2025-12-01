@@ -1139,7 +1139,7 @@ with tab_plant:
                     disabled=filter_disabled,
                     help="Filter and analyze found compounds" if not filter_disabled else "Map plant name first"
                 ):
-                    if 'plant_compounds' not in st.session_state or st.session_state.plant_compounds is None or st.session_state.plant_compounds.empty):
+                    if ('plant_compounds' not in st.session_state or st.session_state.plant_compounds is None or st.session_state.plant_compounds.empty):
                         st.warning("Please map the plant name first")
                     else:
                         st.session_state.show_filters = True
