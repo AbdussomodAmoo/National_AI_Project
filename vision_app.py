@@ -493,7 +493,7 @@ tab_home, tab_literature, tab_3d, tab_plant, tab_synthesis = st.tabs([
     "📚 Literature Mining",
     "🧊 3D Molecule Viewer",
     "🌿 Plant Recognition",
-    # "🧪 Retrosynthesis"
+    "🧪 Retrosynthesis"
 ])
 
 # ============================================================================
