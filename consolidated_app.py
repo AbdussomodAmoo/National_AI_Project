@@ -146,7 +146,7 @@ st.markdown("""
 # STANDALONE PREDICTION FUNCTION (Extracts logic from old Chatbot.predictor)
 # ----------------------------------------------------------------------------
 
-def predict_druglikeness_properties(smiles: str) -> Dict[str, Any]:
+def predict_druglikeness_properties(smiles):
     """
     Predicts drug-likeness properties for a single SMILES string.
     NOTE: This is the logic previously housed in the PredictorAgent class.
