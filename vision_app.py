@@ -1256,26 +1256,6 @@ with tab_plant:
                         
                         col_btn1, col_btn2 = st.columns(2)
                         
-                        with col_btn1:
-                            # Check if we have database
-                            has_database = False
-                            if 'compounds_df' in st.session_state and st.session_state.compounds_df is not None:
-                                has_database = not st.session_state.compounds_df.empty
-                            elif 'database' in st.session_state:
-                                has_database = not st.session_state['database'].empty
-                            
-                            has_species = 'identified_species' in st.session_state
-                            
-                            map_disabled = not (has_database and has_species)
-                            
-                            if st.button(
-                                "🗺️ Map Plant Name", 
-                                key="map_plant_name_manual", 
-                                type="secondary",
-                                use_container_width=True,
-                                disabled=map_disabled,
-                                help="Map common name to scientific name and find compounds" if not map_disabled else "Upload database first"
-                            ):
                           
 # ============================================================================
 # TAB 5: RETROSYNTHESIS
