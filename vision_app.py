@@ -694,6 +694,9 @@ with st.sidebar:
 # MAIN APP - TAB NAVIGATION
 # ============================================================================
 
+# Initialize active tab
+if 'active_tab' not in st.session_state:
+    st.session_state.active_tab = 0
 tab_home, tab_literature, tab_3d, tab_plant, tab_synthesis = st.tabs([
     "🏠 Home",
     "📚 Literature Mining",
@@ -797,17 +800,17 @@ with tab_home:
     
     with col1:
         if st.button("🔍 Search Literature", width='stretch', type="primary", key="home_search_lit"):
-            st.session_state.active_tab = "literature"
+            st.session_state.active_tab = "1" # Switch to Literature tab
             st.rerun()
     
     with col2:
         if st.button("🧊 View 3D Molecules", width='stretch', type="primary", key="home_view_3d"):
-            st.session_state.active_tab = "3d"
+            st.session_state.active_tab = "2"
             st.rerun()
     
     with col3:
         if st.button("🌿 Identify Plant", width='stretch', type="primary", key="home_identify_plant"):
-            st.session_state.active_tab = "plant"
+            st.session_state.active_tab = "3"
             st.rerun()
     
     st.markdown("---")
