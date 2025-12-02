@@ -705,16 +705,18 @@ class PlantAgent:
     def search_by_plant(self, plant_name, top_n=50):
         resolved = self.resolve_plant_name(plant_name)
         
-        if 'organisms' in self.df.columns:
-            results = self.df[self.df['organisms'].str.contains(resolved, case=False, na=False)]
-            
-            if results.empty and resolved.lower() != plant_name.lower():
-                results = self.df[self.df['organisms'].str.contains(plant_name, case=False, na=False)]
-            
-            return results.head(top_n) if not results.empty else None
+        if 'organisms' not in self.df.columns:
+            return None
         
-        return None
-
+        # First try: resolved name
+        results = self.df[self.df['organisms'].str.contains(resolved, case=False, na=False)]
+        
+        # Second try: original input if resolved failed
+        if len(results) == 0 and resolved.lower() != plant_name.lower():
+            results = self.df[self.df['organisms'].str.contains(plant_name, case=False, na=False)]
+        
+        # Return results or None
+        return results.head(top_n) if len(results) > 0 else None
 
 # ============================================================================
 # SIDEBAR CONFIGURATION
@@ -1199,12 +1201,17 @@ with tab_plant:
                                 try:
                                     identified_species_name = st.session_state.identified_species
                                     db_df = st.session_state.get('compounds_df') or st.session_state.get('database')
-                                    
+                                    # DEBUG
+                                    st.write(f"DEBUG - Input: {identified_species_name}")
+                                    st.write(f"DEBUG - Database columns: {db_df.columns.tolist()}")
+                                    st.write(f"DEBUG - First organism entry: {db_df['organisms'].iloc[0] if 'organisms' in db_df.columns else 'NO ORGANISMS COLUMN'}")
+
                                     if db_df is None or db_df.empty:
                                         st.error("⚠️ Database is empty or not loaded properly")
                                     else:
                                         plant_agent = PlantAgent(db_df)
                                         resolved_name = plant_agent.resolve_plant_name(identified_species_name)
+                                        st.write(f"DEBUG - Resolved to: {resolved_name}")  # Check mapping
                                         st.session_state.resolved_plant_name = resolved_name
                                         
                                         st.subheader("🔍 Mapping Results")
@@ -1536,28 +1543,31 @@ with tab_plant:
                     st.session_state.show_filters = False           
 
 # ========================================================================
-# BIOACTIVITY PREDICTION TAB (MODIFIED for LLM Integration)
+# BIOACTIVITY PREDICTION TAB (CONSOLIDATED)
 # ========================================================================
 with tab_bio:
     st.markdown("### 🧬 Bioactivity Prediction")
-    st.info("Predict compound activity against disease targets (EGFR, DHFR, etc.)")
+    st.info("Predict compound activity against disease targets (EGFR, DHFR, etc.) and generate LLM analysis.")
     
     # Check for LLM availability at the top of the tab
     groq_api_key = st.session_state.get('groq_api_key')
     
+    # 1. Scope the database DataFrame (must be done if tab content runs)
+    df = st.session_state.get('database')
+    
     col1, col2 = st.columns([2, 1])
     
-    # 1. COMPOUND INPUT LOGIC (Your existing code)
     with col1:
         # Input method selection
         input_method = st.radio(
             "Input Method:",
             ["Upload CSV", "Paste SMILES", "Search by Plant/Compound Name"],
-            key='bio_input' # Use unique key for the radio button
+            key='bio_input'
         )
         
         bio_smiles = []
         
+        # --- Compound Input Logic (Your existing code adapted for scope) ---
         if input_method == "Upload CSV":
             bio_csv = st.file_uploader("Upload CSV with SMILES", type=['csv'], key='bio_csv')
             if bio_csv:
@@ -1577,24 +1587,22 @@ with tab_bio:
                 st.success(f"✅ {len(bio_smiles)} SMILES entered")
         
         else:  # Search by name
-            # NOTE: Your original code relies on 'df' being defined, which comes from st.session_state.database
-            df = st.session_state.get('database') 
             search_name = st.text_input("Enter plant or compound name:", key='bio_search')
             
             if search_name:
                 if df is None or df.empty:
                     st.error("❌ Please upload database first")
                 else:
-                    # Search logic (simplified from your ChatbotAgent)
+                    # Search logic (using placeholder column names from original code)
                     matches = df[
                         df.get('organisms', pd.Series()).astype(str).str.contains(search_name, case=False, na=False) |
-                        df.get('Compound_Name', pd.Series()).astype(str).str.contains(search_name, case=False, na=False) |
+                        df.get('name', pd.Series()).astype(str).str.contains(search_name, case=False, na=False) |
                         df.get('canonical_smiles', pd.Series()).astype(str).str.contains(search_name, case=False, na=False)
                     ]
                     if len(matches) > 0:
                         st.success(f"✅ Found {len(matches)} matches in database")
                         with st.expander("👀 View matched compounds"):
-                            preview = matches[['Compound_Name', 'organisms', 'molecular_weight', 'qed_drug_likeliness']].head(10)
+                            preview = matches[['name', 'organisms', 'molecular_weight', 'qed_drug_likeliness']].head(10)
                             st.dataframe(preview, use_container_width=True)
                         
                         bio_smiles = matches['canonical_smiles'].dropna().head(50).tolist()
@@ -1602,7 +1610,7 @@ with tab_bio:
                     else:
                         st.warning(f"⚠️ No matches found for '{search_name}' in database")
 
-    # 2. TARGET SELECTION
+    # 3. TARGET SELECTION
     with col2:
         target = st.selectbox(
             "Select Target:",
@@ -1610,62 +1618,71 @@ with tab_bio:
             key='bio_target'
         )
     
-    # --- Prediction Button ---
+    # --- Prediction Button (Triggers calculation and stores results) ---
     if st.button("🔬 Predict Bioactivity", key='predict_bio'):
         if not bio_smiles:
             st.error("Please provide SMILES first")
         else:
-            with st.spinner("Analyzing compounds..."):
-                # Run the prediction and store results in session state
-                results = []
-                # NOTE: You MUST have st.session_state.chatbot.predictor initialized for this to work
-                for smiles in bio_smiles[:20]:
-                    analysis = st.session_state.chatbot.predictor.predict_druglikeness(smiles)
-                    if analysis:
-                        results.append({
-                            'SMILES': smiles, # Store full SMILES for LLM if needed
-                            'MW': analysis['molecular_weight'],
-                            'LogP': analysis['logp'],
-                            'Drug-like': '✅' if analysis['lipinski_pass'] else '❌',
-                            'Predicted Activity': np.random.choice(['Active', 'Inactive'], p=[0.3, 0.7])
-                        })
-                
-                if results:
-                    st.session_state['bio_results_df'] = pd.DataFrame(results)
-                    st.session_state['bio_target_query'] = target # Store query for LLM
-                    st.rerun()
+            if not RDKIT_AVAILABLE:
+                 st.error("RDKit is required for prediction. Please install RDKit.")
+                 # Fall through to skip prediction if RDKit is missing
+            else:
+                with st.spinner("Analyzing compounds..."):
+                    results = []
+                    # 1. RUN PREDICTION
+                    for smiles in bio_smiles[:20]:
+                        # FIX: Call the standalone function
+                        analysis = predict_druglikeness_properties(smiles) 
+                        if analysis and analysis['lipinski_pass'] is not None:
+                            results.append({
+                                'SMILES': smiles,
+                                'Molecular Weight': analysis['molecular_weight'],
+                                'LogP': analysis['logp'],
+                                'Drug-like': '✅' if analysis['lipinski_pass'] else '❌',
+                                'Predicted Activity': np.random.choice(['Active', 'Inactive'], p=[0.3, 0.7]),
+                                # Add properties needed for LLM synthesis
+                                'Compound_Name': "User Compound", # Placeholder
+                                'canonical_smiles': smiles
+                            })
+                    
+                    if results:
+                        st.session_state['bio_results_df'] = pd.DataFrame(results)
+                        st.session_state['bio_target_query'] = target
+                        st.session_state['llm_analysis_report'] = "" # Clear previous report
+                        st.rerun()
 
-    # 3. DISPLAY RESULTS & LLM ANALYSIS BUTTON
+    # 4. DISPLAY RESULTS & LLM ANALYSIS BUTTON
     if 'bio_results_df' in st.session_state and not st.session_state['bio_results_df'].empty:
         results_df = st.session_state['bio_results_df']
         target_query = st.session_state['bio_target_query']
+        groq_api_key = st.session_state.get('groq_api_key')
         
         st.subheader("📊 Prediction Results")
-        st.dataframe(results_df.head(10), use_container_width=True)
+        # Display simplified table for the user
+        st.dataframe(results_df[['SMILES', 'Molecular Weight', 'Drug-like', 'Predicted Activity']].head(10), use_container_width=True)
         
-        # LLM Expert Analysis Trigger
+        # --- LLM Expert Analysis Trigger ---
         st.markdown("---")
         st.subheader("🤖 Expert Interpretation")
         
         if not groq_api_key:
             st.warning("Enter Groq API Key in the sidebar to generate the AI Expert Analysis.")
-        elif st.button("🚀 Generate LLM Expert Analysis", type="secondary"):
+        elif st.button("🚀 Generate LLM Expert Analysis", type="secondary", key='run_llm_bio'):
             # This triggers the LLM call using the GroqClient (defined in Snippet 1)
             client = GroqClient(groq_api_key)
             with st.spinner(f"Analyzing {len(results_df)} compounds for {target_query}..."):
-                
-                # NOTE: We pass the results_df (which contains SMILES, MW, LogP)
+                # Pass the full results set for analysis
                 report = client.generate_expert_analysis(results_df, target_query)
             
             st.session_state['llm_analysis_report'] = report
-            st.rerun() # Rerun to display the report below
+            st.rerun() 
 
         # Display LLM Report
         if 'llm_analysis_report' in st.session_state and st.session_state['llm_analysis_report']:
             st.markdown("#### AI Report:")
             st.markdown(st.session_state['llm_analysis_report'])
         
-        # Download results (Your existing code)
+        # Download results
         csv = results_df.to_csv(index=False)
         st.download_button(
             "📥 Download Results",
