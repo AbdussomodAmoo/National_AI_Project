@@ -142,6 +142,41 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+# ----------------------------------------------------------------------------
+# STANDALONE PREDICTION FUNCTION (Extracts logic from old Chatbot.predictor)
+# ----------------------------------------------------------------------------
+
+def predict_druglikeness_properties(smiles: str) -> Dict[str, Any]:
+    """
+    Predicts drug-likeness properties for a single SMILES string.
+    NOTE: This is the logic previously housed in the PredictorAgent class.
+    """
+    if not RDKIT_AVAILABLE:
+        return {'lipinski_pass': False, 'molecular_weight': 0, 'logp': 0, 'hbd': 0, 'hba': 0}
+        
+    try:
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            return None
+        
+        mw = Descriptors.MolWt(mol)
+        logp = Descriptors.MolLogP(mol)
+        hbd = Descriptors.NumHDonors(mol)
+        hba = Descriptors.NumHAcceptors(mol)
+        
+        # Lipinski's Rule of Five check (Max 1 violation) 
+        lipinski = (mw <= 500 and logp <= 5 and hbd <= 5 and hba <= 10)
+        
+        return {
+            'lipinski_pass': lipinski,
+            'molecular_weight': mw,
+            'logp': logp,
+            'hbd': hbd,
+            'hba': hba
+        }
+    except Exception as e:
+        print(f"Prediction Error for {smiles}: {e}")
+        return None
 # ====================================================
 # RETROSYNTHESIS
 #=====================================================
