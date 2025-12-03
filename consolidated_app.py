@@ -1750,23 +1750,33 @@ with tab_dock:
         )
         
         dock_smiles = []
-        
-        # --- (Your existing input logic remains here: Upload CSV, Paste SMILES, Search Database) ---
-        # NOTE: Placeholder logic for df and matches retrieval should be implemented here.
-        # For simplicity, we assume dock_smiles is populated by your original logic.
-        
+
+        # --- DOCKING INPUT LOGIC ---
         if dock_input == "Upload CSV":
-             # ... your existing file uploader logic here ...
-             pass
+             dock_csv = st.file_uploader("Upload CSV", type=['csv'], key='dock_csv')
+            if dock_csv:
+                dock_df = pd.read_csv(dock_csv)
+                col = st.selectbox("SMILES column:", dock_df.columns, key='dock_col')
+                dock_smiles = dock_df[col].dropna().tolist()[:10]
+                st.success(f"✅ Loaded {len(dock_smiles)} SMILES")
         elif dock_input == "Paste SMILES":
-             # ... your existing text area logic here ...
-             pass
+            smiles_text = st.text_area("Paste SMILES:", key='dock_text')
+            if smiles_text:
+                dock_smiles = [s.strip() for s in smiles_text.split('\n') if s.strip()]
+                st.success(f"✅ {len(dock_smiles)} SMILES")
         else: # Search Database
-             # ... your existing search logic here ...
-             # For demo, we use a placeholder:
-             df = st.session_state.get('database')
-             if df is not None and not df.empty:
-                 dock_smiles = df['canonical_smiles'].head(5).tolist()
+            search = st.text_input("Search Plant or Compound Name:", key='dock_search')
+            if search and df is not None and not df.empty:
+                # Assuming 'organisms' and 'canonical_smiles' columns exist in the database
+                matches = df[df.get('organisms', pd.Series()).astype(str).str.contains(search, case=False, na=False)]
+                
+                if not matches.empty:
+                    dock_smiles = matches['canonical_smiles'].head(10).tolist()
+                    st.success(f"✅ Found {len(dock_smiles)} compounds from search.")
+                else:
+                    st.warning("No matches found in the database.")
+            elif search:
+                st.error("❌ Database not available for searching.")
 
     with col2:
         protein = st.selectbox(
