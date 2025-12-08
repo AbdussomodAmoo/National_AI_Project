@@ -1753,7 +1753,7 @@ with tab_dock:
 
         # --- DOCKING INPUT LOGIC ---
         if dock_input == "Upload CSV":
-             dock_csv = st.file_uploader("Upload CSV", type=['csv'], key='dock_csv')
+            dock_csv = st.file_uploader("Upload CSV", type=['csv'], key='dock_csv')
             if dock_csv:
                 dock_df = pd.read_csv(dock_csv)
                 col = st.selectbox("SMILES column:", dock_df.columns, key='dock_col')
