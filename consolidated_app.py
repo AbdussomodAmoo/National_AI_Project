@@ -190,7 +190,7 @@ def predict_druglikeness_properties(smiles):
 def load_bioactivity_models():
     """Load all trained bioactivity models"""
     models = {}
-    model_dir = "models/bioactivity"
+    model_dir = "./models/bioactivity"
     
     model_files = {
         'Cancer (EGFR)': 'egfr',
