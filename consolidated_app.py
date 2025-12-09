@@ -19,6 +19,9 @@ import torch
 import requests
 import zipfile
 import shutil
+import joblib
+import numpy as np
+from rdkit.Chem import rdMolDescriptors
 
 
 VISION_AVAILABLE = True
@@ -177,6 +180,150 @@ def predict_druglikeness_properties(smiles):
     except Exception as e:
         print(f"Prediction Error for {smiles}: {e}")
         return None
+
+# ============================================================================
+# BIOACTIVITY PREDICTION FUNCTIONS
+# ============================================================================
+
+# Global variable to cache loaded models
+@st.cache_resource
+def load_bioactivity_models():
+    """Load all trained bioactivity models"""
+    models = {}
+    model_dir = "models/bioactivity"
+    
+    model_files = {
+        'Cancer (EGFR)': 'egfr',
+        'Malaria (DHFR)': 'dhfr',
+        'Diabetes (DPP4)': 'dpp4',
+        'HIV (Protease)': 'hiv_protease',
+        'TB (InhA)': 'tb_inha'
+    }
+    
+    for display_name, file_prefix in model_files.items():
+        # Try both classification and regression
+        class_path = f"{model_dir}/{file_prefix}_model.joblib"
+        reg_path = f"{model_dir}/{file_prefix}_regression.joblib"
+        
+        if os.path.exists(class_path):
+            models[display_name] = {
+                'model': joblib.load(class_path),
+                'type': 'classification'
+            }
+        elif os.path.exists(reg_path):
+            models[display_name] = {
+                'model': joblib.load(reg_path),
+                'type': 'regression'
+            }
+    
+    return models
+
+def featurize(smiles):
+    """
+    Extract comprehensive molecular features from SMILES.
+    Must match your training featurization exactly.
+    """
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+
+    feature_dict = {
+        # --- 2D Descriptors ---
+        'MolWt': Descriptors.MolWt(mol),
+        'TPSA': Descriptors.TPSA(mol),
+        'LogP': Descriptors.MolLogP(mol),
+        'NumHDonors': Descriptors.NumHDonors(mol),
+        'NumHAcceptors': Descriptors.NumHAcceptors(mol),
+        'NumRotatableBonds': Descriptors.NumRotatableBonds(mol),
+        'NumAromaticRings': Descriptors.NumAromaticRings(mol),
+        'HeavyAtomCount': Descriptors.HeavyAtomCount(mol),
+        'RingCount': Descriptors.RingCount(mol),
+        'FractionCsp3': Descriptors.FractionCSP3(mol),
+        'BertzCT': Descriptors.BertzCT(mol),
+        'NumSaturatedRings': Descriptors.NumSaturatedRings(mol),
+        'NumAliphaticRings': Descriptors.NumAliphaticRings(mol),
+    }
+
+    # --- 3D descriptors ---
+    try:
+        mol_3d = Chem.AddHs(mol)
+        params = AllChem.ETKDG()
+        params.randomSeed = 42
+
+        if AllChem.EmbedMolecule(mol_3d, params) == 0:
+            AllChem.UFFOptimizeMolecule(mol_3d)
+
+            feature_dict.update({
+                'Asphericity': rdMolDescriptors.CalcAsphericity(mol_3d),
+                'Eccentricity': rdMolDescriptors.CalcEccentricity(mol_3d),
+                'InertialShapeFactor': rdMolDescriptors.CalcInertialShapeFactor(mol_3d),
+                'RadiusOfGyration': rdMolDescriptors.CalcRadiusOfGyration(mol_3d),
+                'SpherocityIndex': rdMolDescriptors.CalcSpherocityIndex(mol_3d),
+                'PMI1': rdMolDescriptors.CalcPMI1(mol_3d),
+                'PMI2': rdMolDescriptors.CalcPMI2(mol_3d),
+                'PMI3': rdMolDescriptors.CalcPMI3(mol_3d),
+            })
+        else:
+            raise Exception("3D embedding failed")
+    except:
+        # Fill with 0 if 3D fails
+        feature_dict.update({
+            'Asphericity': 0, 'Eccentricity': 0, 'InertialShapeFactor': 0,
+            'RadiusOfGyration': 0, 'SpherocityIndex': 0,
+            'PMI1': 0, 'PMI2': 0, 'PMI3': 0,
+        })
+
+    # --- Morgan Fingerprints ---
+    fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=512)
+    fp_array = np.array(fp)
+
+    for j, bit in enumerate(fp_array):
+        feature_dict[f'fp_{j}'] = bit
+
+    return feature_dict
+
+def predict_bioactivity(smiles, target_name, models_dict):
+    """Predict bioactivity using trained models"""
+    
+    if target_name not in models_dict:
+        return None
+    
+    # Featurize
+    features = featurize(smiles)
+    if features is None:
+        return None
+    
+    # Convert to DataFrame
+    X = pd.DataFrame([features]).fillna(0)
+    
+    # Get model
+    model_info = models_dict[target_name]
+    model = model_info['model']
+    model_type = model_info['type']
+    
+    # Predict
+    if model_type == 'classification':
+        pred_class = model.predict(X)[0]
+        pred_proba = model.predict_proba(X)[0]
+        
+        return {
+            'prediction': 'Active' if pred_class == 1 else 'Inactive',
+            'confidence': max(pred_proba),
+            'activity_probability': pred_proba[1] if len(pred_proba) > 1 else pred_proba[0]
+        }
+    else:  # regression
+        pred_log_ic50 = model.predict(X)[0]
+        pred_ic50 = 10 ** pred_log_ic50
+        
+        # Classify based on IC50 threshold
+        activity = 'Active' if pred_ic50 < 10 else 'Inactive'
+        
+        return {
+            'prediction': activity,
+            'ic50_um': pred_ic50,
+            'confidence': 1.0 if pred_ic50 < 10 else 0.5
+        }
+
 # ====================================================
 # RETROSYNTHESIS
 #=====================================================
@@ -375,6 +522,61 @@ class GroqClient:
             except Exception as e:
                 print(f"Groq API Error: {e}")
                 return f"**LLM Error:** Could not interpret docking results. Details: {e}"
+    def generate_bioactivity_analysis(self, results_df: pd.DataFrame, target_query: str) -> str:
+        """
+        NEW METHOD: Generates expert analysis for bioactivity prediction results.
+        """
+        if results_df.empty:
+            return "**Analysis Failed:** No bioactivity results to analyze."
+        
+        # Prepare top candidates markdown table
+        top_candidates_markdown = "SMILES | MW (Da) | LogP | Activity | Confidence\n---|---|---|---|---\n"
+        
+        for _, row in results_df.head(10).iterrows():
+            smiles = str(row.get('SMILES', 'Unknown'))[:40] + "..."
+            mw = f"{row.get('Molecular Weight', 0):.1f}"
+            logp = f"{row.get('LogP', 0):.2f}"
+            activity = row.get('Predicted Activity', 'Unknown')
+            confidence = row.get('Confidence', 'N/A')
+            top_candidates_markdown += f"{smiles} | {mw} | {logp} | {activity} | {confidence}\n"
+
+        system_prompt = f"""You are AfroMediBot, an AI Expert in natural products drug discovery and bioactivity prediction.
+Your task is to provide a concise, professional expert analysis report based on the ML-predicted bioactivity screening results.
+Focus on the top candidates' drug-likeness and predicted activity for the target: {target_query}.
+
+Key Data:
+- Total Candidates Screened: {len(results_df)}
+- Active Candidates: {(results_df.get('Predicted Activity', pd.Series()) == 'Active').sum()}
+- Target: {target_query}
+
+Top 10 Candidates Data:
+{top_candidates_markdown}
+
+Structure your response with markdown headings:
+## 🔬 Bioactivity Expert Analysis Report
+### 1. Summary of Screening Results
+### 2. Physicochemical Assessment (Key trends in MW, LogP)
+### 3. Lead Candidate Recommendation (Highlight top 2-3 active compounds)
+### 4. Next Steps (In vitro validation, optimization suggestions)
+
+Be concise, scientific, and highlight the most promising molecule(s)."""
+
+        user_query = f"Generate the expert bioactivity analysis report for the screening: {target_query}."
+        
+        try:
+            response = self.client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_query}
+                ],
+                model=self.model,
+                temperature=0.3,
+                max_tokens=2000
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"Groq API Error: {e}")
+            return f"**LLM Error:** Could not generate bioactivity analysis. Details: {e}"
 
 # ============================================================================
 # LITERATURE MINING FUNCTIONS
@@ -1581,19 +1783,25 @@ with tab_plant:
 # BIOACTIVITY PREDICTION TAB (CONSOLIDATED)
 # ========================================================================
 with tab_bio:
-    st.markdown("### 🧬 Bioactivity Prediction")
-    st.info("Predict compound activity against disease targets (EGFR, DHFR, etc.) and generate LLM analysis.")
+    st.header("🧬 Bioactivity Prediction")
+    st.info("Predict compound activity against disease targets using trained ML models")
     
-    # Check for LLM availability at the top of the tab
-    groq_api_key = st.session_state.get('groq_api_key')
+    # Load models
+    try:
+        models_dict = load_bioactivity_models()
+        st.success(f"✅ Loaded {len(models_dict)} bioactivity models")
+    except Exception as e:
+        st.error(f"Failed to load models: {e}")
+        models_dict = {}
     
-    # 1. Scope the database DataFrame (must be done if tab content runs)
+    # Get database
     df = st.session_state.get('database')
+    groq_api_key = st.session_state.get('groq_api_key')
     
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        # Input method selection
+        # Input method
         input_method = st.radio(
             "Input Method:",
             ["Upload CSV", "Paste SMILES", "Search by Plant/Compound Name"],
@@ -1602,7 +1810,6 @@ with tab_bio:
         
         bio_smiles = []
         
-        # --- Compound Input Logic (Your existing code adapted for scope) ---
         if input_method == "Upload CSV":
             bio_csv = st.file_uploader("Upload CSV with SMILES", type=['csv'], key='bio_csv')
             if bio_csv:
@@ -1624,108 +1831,105 @@ with tab_bio:
         else:  # Search by name
             search_name = st.text_input("Enter plant or compound name:", key='bio_search')
             
-            if search_name:
-                if df is None or df.empty:
-                    st.error("❌ Please upload database first")
-                else:
-                    # Search logic (using placeholder column names from original code)
-                    matches = df[
-                        df.get('organisms', pd.Series()).astype(str).str.contains(search_name, case=False, na=False) |
-                        df.get('name', pd.Series()).astype(str).str.contains(search_name, case=False, na=False) |
-                        df.get('canonical_smiles', pd.Series()).astype(str).str.contains(search_name, case=False, na=False)
-                    ]
-                    if len(matches) > 0:
-                        st.success(f"✅ Found {len(matches)} matches in database")
-                        with st.expander("👀 View matched compounds"):
-                            preview = matches[['name', 'organisms', 'molecular_weight', 'qed_drug_likeliness']].head(10)
-                            st.dataframe(preview, use_container_width=True)
-                        
-                        bio_smiles = matches['canonical_smiles'].dropna().head(50).tolist()
-                        st.info(f"📊 Selected {len(bio_smiles)} compounds for analysis")
-                    else:
-                        st.warning(f"⚠️ No matches found for '{search_name}' in database")
-
-    # 3. TARGET SELECTION
+            if search_name and df is not None:
+                matches = df[
+                    df.get('organisms', pd.Series()).astype(str).str.contains(search_name, case=False, na=False) |
+                    df.get('name', pd.Series()).astype(str).str.contains(search_name, case=False, na=False)
+                ]
+                
+                if len(matches) > 0:
+                    st.success(f"✅ Found {len(matches)} matches")
+                    with st.expander("👀 View compounds"):
+                        st.dataframe(matches[['name', 'organisms', 'molecular_weight']].head(10))
+                    
+                    bio_smiles = matches['canonical_smiles'].dropna().head(50).tolist()
+                    st.info(f"📊 Selected {len(bio_smiles)} compounds")
+    
     with col2:
         target = st.selectbox(
             "Select Target:",
-            ["Cancer (EGFR)", "Malaria (DHFR)", "Diabetes (DPP4)", "HIV (Protease)", "TB (InhA)"],
+            list(models_dict.keys()) if models_dict else ["No models loaded"],
             key='bio_target'
         )
     
-    # --- Prediction Button (Triggers calculation and stores results) ---
+    # Predict button
     if st.button("🔬 Predict Bioactivity", key='predict_bio'):
         if not bio_smiles:
             st.error("Please provide SMILES first")
+        elif not models_dict:
+            st.error("No models loaded")
         else:
-            if not RDKIT_AVAILABLE:
-                 st.error("RDKit is required for prediction. Please install RDKit.")
-                 # Fall through to skip prediction if RDKit is missing
-            else:
-                with st.spinner("Analyzing compounds..."):
-                    results = []
-                    # 1. RUN PREDICTION
-                    for smiles in bio_smiles[:20]:
-                        # FIX: Call the standalone function
-                        analysis = predict_druglikeness_properties(smiles) 
-                        if analysis and analysis['lipinski_pass'] is not None:
-                            results.append({
-                                'SMILES': smiles,
-                                'Molecular Weight': analysis['molecular_weight'],
-                                'LogP': analysis['logp'],
-                                'Drug-like': '✅' if analysis['lipinski_pass'] else '❌',
-                                'Predicted Activity': np.random.choice(['Active', 'Inactive'], p=[0.3, 0.7]),
-                                # Add properties needed for LLM synthesis
-                                'Compound_Name': "User Compound", # Placeholder
-                                'canonical_smiles': smiles
-                            })
+            with st.spinner(f"Predicting {target} activity..."):
+                results = []
+                
+                for smiles in bio_smiles[:20]:  # Limit to 20
+                    # Predict with real model
+                    prediction = predict_bioactivity(smiles, target, models_dict)
                     
-                    if results:
-                        st.session_state['bio_results_df'] = pd.DataFrame(results)
-                        st.session_state['bio_target_query'] = target
-                        st.session_state['llm_analysis_report'] = "" # Clear previous report
-                        st.rerun()
-
-    # 4. DISPLAY RESULTS & LLM ANALYSIS BUTTON
+                    if prediction:
+                        # Also calculate basic properties
+                        mol = Chem.MolFromSmiles(smiles)
+                        if mol:
+                            results.append({
+                                'SMILES': smiles[:50] + '...',
+                                'Molecular Weight': round(Descriptors.MolWt(mol), 1),
+                                'LogP': round(Descriptors.MolLogP(mol), 2),
+                                'Predicted Activity': prediction['prediction'],
+                                'Confidence': f"{prediction['confidence']:.1%}",
+                                'IC50 (μM)': f"{prediction.get('ic50_um', 'N/A'):.2f}" if 'ic50_um' in prediction else 'N/A'
+                            })
+                
+                if results:
+                    st.session_state['bio_results_df'] = pd.DataFrame(results)
+                    st.session_state['bio_target_query'] = target
+                    st.session_state['llm_analysis_report'] = ""
+                    st.rerun()
+    
+    # Display results
     if 'bio_results_df' in st.session_state and not st.session_state['bio_results_df'].empty:
         results_df = st.session_state['bio_results_df']
         target_query = st.session_state['bio_target_query']
-        groq_api_key = st.session_state.get('groq_api_key')
         
         st.subheader("📊 Prediction Results")
-        # Display simplified table for the user
-        st.dataframe(results_df[['SMILES', 'Molecular Weight', 'Drug-like', 'Predicted Activity']].head(10), use_container_width=True)
+        st.dataframe(results_df, use_container_width=True)
         
-        # --- LLM Expert Analysis Trigger ---
+        # Statistics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Tested", len(results_df))
+        with col2:
+            active_count = (results_df['Predicted Activity'] == 'Active').sum()
+            st.metric("Active Compounds", active_count)
+        with col3:
+            active_pct = (active_count / len(results_df)) * 100
+            st.metric("Hit Rate", f"{active_pct:.1f}%")
+        
+        # LLM Analysis
         st.markdown("---")
         st.subheader("🤖 Expert Interpretation")
         
         if not groq_api_key:
-            st.warning("Enter Groq API Key in the sidebar to generate the AI Expert Analysis.")
-        elif st.button("🚀 Generate LLM Expert Analysis", type="secondary", key='run_llm_bio'):
-            # This triggers the LLM call using the GroqClient (defined in Snippet 1)
+            st.warning("Enter Groq API Key in sidebar to generate AI analysis")
+        elif st.button("🚀 Generate Expert Analysis", type="secondary", key='run_llm_bio'):
             client = GroqClient(groq_api_key)
-            with st.spinner(f"Analyzing {len(results_df)} compounds for {target_query}..."):
-                # Pass the full results set for analysis
+            with st.spinner(f"Analyzing results for {target_query}..."):
                 report = client.generate_expert_analysis(results_df, target_query)
             
             st.session_state['llm_analysis_report'] = report
-            st.rerun() 
-
-        # Display LLM Report
+            st.rerun()
+        
+        # Display report
         if 'llm_analysis_report' in st.session_state and st.session_state['llm_analysis_report']:
-            st.markdown("#### AI Report:")
             st.markdown(st.session_state['llm_analysis_report'])
         
-        # Download results
+        # Download
         csv = results_df.to_csv(index=False)
         st.download_button(
             "📥 Download Results",
             data=csv,
-            file_name="bioactivity_predictions.csv",
+            file_name=f"bioactivity_{target_query.replace(' ', '_')}.csv",
             mime="text/csv"
         )
-
 # ========================================================================
 # MOLECULAR DOCKING TAB (MODIFIED for LLM Analysis)
 # ========================================================================
