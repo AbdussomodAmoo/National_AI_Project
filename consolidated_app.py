@@ -221,19 +221,14 @@ def load_bioactivity_models():
                 'type': 'classification'
             }
             loaded = True
-            except Exception as e:
-                st.warning(f"⚠️ Failed to load {display_name} (classification): {e}")
-
-
+            
         
         elif not loaded andos.path.exists(reg_path):
             models[display_name] = {
                 'model': joblib.load(reg_path),
                 'type': 'regression'
             }
-            except Exception as e:
-                st.warning(f"⚠️ Failed to load {display_name} (regression): {e}")
-        
+           
         if not loaded:
             missing_models.append(display_name)
 
