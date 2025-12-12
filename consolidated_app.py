@@ -184,6 +184,14 @@ def predict_druglikeness_properties(smiles):
 # ============================================================================
 # BIOACTIVITY PREDICTION FUNCTIONS
 # ============================================================================
+BIOACTIVITY_TARGETS = {
+    'Cancer (EGFR)': 'egfr',
+    'Malaria (DHFR)': 'dhfr',
+    'Diabetes (DPP4)': 'dpp4',
+    'HIV (Protease)': 'hiv_protease',
+    'TB (InhA)': 'tb_inha'
+}
+
 
 # Global variable to cache loaded models
 @st.cache_resource
@@ -192,29 +200,50 @@ def load_bioactivity_models():
     models = {}
     model_dir = "./models/bioactivity"
     
-    model_files = {
-        'Cancer (EGFR)': 'egfr',
-        'Malaria (DHFR)': 'dhfr',
-        'Diabetes (DPP4)': 'dpp4',
-        'HIV (Protease)': 'hiv_protease',
-        'TB (InhA)': 'tb_inha'
-    }
+    #model_files = {
+    #    'Cancer (EGFR)': 'egfr',
+    #    'Malaria (DHFR)': 'dhfr',
+    #    'Diabetes (DPP4)': 'dpp4',
+    #   'HIV (Protease)': 'hiv_protease',
+    #    'TB (InhA)': 'tb_inha'
+    #}
     
     for display_name, file_prefix in model_files.items():
         # Try both classification and regression
-        class_path = f"{model_dir}/{file_prefix}_model.joblib"
-        reg_path = f"{model_dir}/{file_prefix}_regression.joblib"
+        class_path = f"{model_dir}/{file_prefix}classification_model.joblib"
+        reg_path = f"{model_dir}/{file_prefix}_regression_model.joblib"
+
+        loaded = False
         
         if os.path.exists(class_path):
             models[display_name] = {
                 'model': joblib.load(class_path),
                 'type': 'classification'
             }
-        elif os.path.exists(reg_path):
+            loaded = True
+            except Exception as e:
+                st.warning(f"⚠️ Failed to load {display_name} (classification): {e}")
+
+
+        
+        elif not loaded andos.path.exists(reg_path):
             models[display_name] = {
                 'model': joblib.load(reg_path),
                 'type': 'regression'
             }
+            except Exception as e:
+                st.warning(f"⚠️ Failed to load {display_name} (regression): {e}")
+        
+        if not loaded:
+            missing_models.append(display_name)
+
+    # Display status
+    if models:
+        st.success(f"✅ Loaded {len(models)} bioactivity models: {', '.join(models.keys())}")
+    
+    if missing_models:
+        st.warning(f"⚠️ Missing models: {', '.join(missing_models)}")
+        st.info("💡 The app will work with available models only.")
     
     return models
 
@@ -1787,19 +1816,25 @@ with tab_bio:
     st.info("Predict compound activity against disease targets using trained ML models")
     
     # Load models
-    try:
-        models_dict = load_bioactivity_models()
-        st.success(f"✅ Loaded {len(models_dict)} bioactivity models")
-    except Exception as e:
-        st.error(f"Failed to load models: {e}")
-        models_dict = {}
+    models_dict = load_bioactivity_models()
+    st.success(f"✅ Loaded {len(models_dict)} bioactivity models")
+
+    if not models_dict:
+        st.error("❌ No bioactivity models found in 'models/bioactivity/' folder.")
+        st.info("Please ensure your model files are in: models/bioactivity/egfr_model.joblib, etc.")
+        st.stop()
+
+    # Target selection - ONLY show available models
+    with st.expander("🎯 Available Models", expanded=False):
+        for target, info in models_dict.items():
+            st.write(f"✅ {target} ({info['type']})")
+    
+    col1, col2 = st.columns([2, 1])
     
     # Get database
     df = st.session_state.get('database')
     groq_api_key = st.session_state.get('groq_api_key')
-    
-    col1, col2 = st.columns([2, 1])
-    
+        
     with col1:
         # Input method
         input_method = st.radio(
@@ -1846,6 +1881,7 @@ with tab_bio:
                     st.info(f"📊 Selected {len(bio_smiles)} compounds")
     
     with col2:
+        # Target selection - dynamically populated
         target = st.selectbox(
             "Select Target:",
             list(models_dict.keys()) if models_dict else ["No models loaded"],
@@ -1870,27 +1906,46 @@ with tab_bio:
                         # Also calculate basic properties
                         mol = Chem.MolFromSmiles(smiles)
                         if mol:
-                            results.append({
+                            # Get model type
+                            model_type = models_dict[target]['type']
+                            
+                            # Build result row based on model type
+                            result_row = {
                                 'SMILES': smiles[:50] + '...',
                                 'Molecular Weight': round(Descriptors.MolWt(mol), 1),
                                 'LogP': round(Descriptors.MolLogP(mol), 2),
                                 'Predicted Activity': prediction['prediction'],
-                                'Confidence': f"{prediction['confidence']:.1%}",
-                                'IC50 (μM)': f"{prediction.get('ic50_um', 'N/A'):.2f}" if 'ic50_um' in prediction else 'N/A'
-                            })
+                                'Model Type': model_type.title()
+                            }
+                            
+                            # Add type-specific columns
+                            if model_type == 'classification':
+                                result_row['Confidence'] = f"{prediction['confidence']:.1%}"
+                                result_row['Activity Probability'] = f"{prediction['activity_probability']:.1%}"
+                            else:  # regression
+                                result_row['IC50 (μM)'] = f"{prediction['ic50_um']:.2f}"
+                                result_row['Confidence'] = f"{prediction['confidence']:.1%}"
+                            
+                            results.append(result_row)
                 
                 if results:
                     st.session_state['bio_results_df'] = pd.DataFrame(results)
                     st.session_state['bio_target_query'] = target
-                    st.session_state['llm_analysis_report'] = ""
+                    st.session_state['bio_llm_analysis_report'] = ""
+                    st.session_state['bio_model_type'] = models_dict[target]['type']
                     st.rerun()
     
     # Display results
     if 'bio_results_df' in st.session_state and not st.session_state['bio_results_df'].empty:
         results_df = st.session_state['bio_results_df']
         target_query = st.session_state['bio_target_query']
+        model_type = st.session_state.get('bio_model_type', 'unknown')
         
         st.subheader("📊 Prediction Results")
+        # Display model type indicator
+        st.info(f"**Model Type:** {model_type.title()} | **Target:** {target_query}")
+
+        # show dataframe
         st.dataframe(results_df, use_container_width=True)
         
         # Statistics
@@ -1901,8 +1956,14 @@ with tab_bio:
             active_count = (results_df['Predicted Activity'] == 'Active').sum()
             st.metric("Active Compounds", active_count)
         with col3:
-            active_pct = (active_count / len(results_df)) * 100
-            st.metric("Hit Rate", f"{active_pct:.1f}%")
+            if model_type == 'regression':
+                # Show average IC50 for regression models
+                avg_ic50 = results_df['IC50 (μM)'].str.replace(' μM', '').astype(float).mean()
+                st.metric("Avg IC50 (μM)", f"{avg_ic50:.2f}")
+            else:
+                # Show hit rate for classification models
+                hit_rate = (active_count / len(results_df)) * 100
+                st.metric("Hit Rate", f"{hit_rate:.1f}%")
         
         # LLM Analysis
         st.markdown("---")
