@@ -223,7 +223,7 @@ def load_bioactivity_models():
             loaded = True
             
         
-        elif not loaded andos.path.exists(reg_path):
+        elif not loaded and os.path.exists(reg_path):
             models[display_name] = {
                 'model': joblib.load(reg_path),
                 'type': 'regression'
