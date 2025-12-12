@@ -200,13 +200,13 @@ def load_bioactivity_models():
     models = {}
     model_dir = "./models/bioactivity"
     
-    #model_files = {
-    #    'Cancer (EGFR)': 'egfr',
-    #    'Malaria (DHFR)': 'dhfr',
-    #    'Diabetes (DPP4)': 'dpp4',
-    #   'HIV (Protease)': 'hiv_protease',
-    #    'TB (InhA)': 'tb_inha'
-    #}
+    model_files = {
+        'Cancer (EGFR)': 'egfr',
+        'Malaria (DHFR)': 'dhfr',
+        'Diabetes (DPP4)': 'dpp4',
+       'HIV (Protease)': 'hiv_protease',
+        'TB (InhA)': 'tb_inha'
+    }
     
     for display_name, file_prefix in model_files.items():
         # Try both classification and regression
