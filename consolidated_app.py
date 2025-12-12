@@ -199,19 +199,20 @@ def load_bioactivity_models():
     """Load all trained bioactivity models"""
     models = {}
     missing_models = []
-    model_dir = "models/bioactivity"
+    model_dir = "../models/bioactivity"
     
     model_files = {
-        'Cancer (EGFR)': 'egfr',
-        'Malaria (DHFR)': 'dhfr',
-        'Diabetes (DPP4)': 'dpp4',
-       'HIV (Protease)': 'hiv_protease',
-        'TB (InhA)': 'tb_inha'
+        
+        'Cancer (EGFR)': 'cancer_EGFR',
+        #'Malaria (DHFR)': 'dhfr',
+        'Diabetes (DPP4)': 'diabetes_DPP4',
+        'HIV (Protease)': 'hiv_HIV_Protease',
+        #'TB (InhA)': 'tb_inha'
     }
     
     for display_name, file_prefix in model_files.items():
         # Try both classification and regression
-        class_path = f"{model_dir}/{file_prefix}classification_model.joblib"
+        class_path = f"{model_dir}/{file_prefix}_classification_model.joblib"
         reg_path = f"{model_dir}/{file_prefix}_regression_model.joblib"
 
         loaded = False
