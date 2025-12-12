@@ -199,7 +199,7 @@ def load_bioactivity_models():
     """Load all trained bioactivity models"""
     models = {}
     missing_models = []
-    model_dir = "../models/bioactivity"
+    model_dir = "https://github.com/AbdussomodAmoo/National_AI_Project/tree/main/models/bioactivity"
     
     model_files = {
         
