@@ -199,7 +199,7 @@ def load_bioactivity_models():
     """Load all trained bioactivity models"""
     models = {}
     missing_models = []
-    model_dir = "National_AI_Project/models/bioactivity"
+    model_dir = "models/bioactivity"
     
     model_files = {
         'Cancer (EGFR)': 'egfr',
@@ -1816,7 +1816,7 @@ with tab_bio:
     st.success(f"✅ Loaded {len(models_dict)} bioactivity models")
 
     if not models_dict:
-        st.error("❌ No bioactivity models found in 'models/bioactivity/' folder.")
+        st.error("❌ No bioactivity models found in 'main/models/bioactivity/' folder.")
         st.info("Please ensure your model files are in: models/bioactivity/egfr_model.joblib, etc.")
         st.stop()
 
