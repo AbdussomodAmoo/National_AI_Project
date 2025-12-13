@@ -375,6 +375,36 @@ def predict_bioactivity(smiles, target_name, models_dict):
             'confidence': 1.0 if pred_ic50 < 10 else 0.5
         }
 
+# ============================================================================
+# MOLECULAR DOCKING
+# ============================================================================
+# Add this function (based on your working code)
+def perform_docking_wrapper(smiles, target_name):
+    """
+    Wrapper for your existing docking function
+    Maps target display names to file prefixes
+    """
+    
+    # Map display names to your target file prefixes
+    target_mapping = {
+        'Cancer (EGFR)': 'cancer_EGFR.pdbqt',
+        'Cancer (BCR_ABL)': 'cancer_BCR_ABL.pdbqt',
+        'Malaria (DHFR)': 'malaria_dhfr.pdbqt',
+        #'Diabetes (DPP4)': 'diabetes_DPP4.pdbqt',
+        #'HIV (Protease)': 'hiv_Protease',
+        #'TB (InhA)': 'tuberculosis_InhA'
+    }
+    
+    target_file_prefix = target_mapping.get(target_name)
+    
+    if not target_file_prefix:
+        return None
+    
+    # Call your existing perform_docking_for_target function
+    result = perform_docking_for_target(smiles, target_file_prefix, debug=False)
+    
+    return result
+
 # ====================================================
 # RETROSYNTHESIS
 #=====================================================
@@ -2076,7 +2106,7 @@ with tab_dock:
     with col2:
         protein = st.selectbox(
             "Target Protein:",
-            ["Cancer EGFR", "Malaria DHFR", "HIV Protease", "TB InhA"],
+            ["Cancer (BCR_ABL)", "Malaria DHFR", 'Cancer (EGFR)'],
             key='dock_protein' # Added key for state tracking
         )
         exhaustiveness = st.slider("Exhaustiveness:", 1, 10, 8)
@@ -2092,12 +2122,32 @@ with tab_dock:
                 # 1. RUN SIMULATION (Placeholder results)
                 dock_results = []
                 for smiles in dock_smiles:
-                    dock_results.append({
-                        'SMILES': smiles,
-                        'Binding Energy (kcal/mol)': round(np.random.uniform(-12, -5), 2),
-                        'Binding Affinity': np.random.choice(['Strong', 'Moderate', 'Weak']),
-                        'Status': '✅ Success'
-                    })
+                    docking_result = perform_docking_wrapper(smiles, protein)
+                    
+                    if docking_result and docking_result['status'] == 'Success':
+                        binding_energy = docking_result['binding_energy']
+                        
+                        # Classify affinity based on energy
+                        if binding_energy < -8.0:
+                            affinity = 'Strong'
+                        elif binding_energy < -6.0:
+                            affinity = 'Moderate'
+                        else:
+                            affinity = 'Weak'
+                        
+                        dock_results.append({
+                            'SMILES': smiles[:40] + '...',
+                            'Binding Energy (kcal/mol)': binding_energy,
+                            'Binding Affinity': affinity,
+                            'Status': '✅ Success'
+                        })
+                    else:
+                        dock_results.append({
+                            'SMILES': smiles[:40] + '...',
+                            'Binding Energy (kcal/mol)': 'N/A',
+                            'Binding Affinity': 'Failed',
+                            'Status': '❌ Docking failed'
+                        })
                 dock_df = pd.DataFrame(dock_results).sort_values('Binding Energy (kcal/mol)')
                 
                 # 2. RUN LLM INTERPRETATION
