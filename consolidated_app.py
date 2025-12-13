@@ -1899,7 +1899,13 @@ with tab_bio:
                     with st.expander("👀 View compounds"):
                         st.dataframe(matches[['name', 'organisms', 'molecular_weight']].head(10))
                     
-                    bio_smiles = matches['canonical_smiles'].dropna().head(50).tolist()
+                    if 'canonical_smiles' in matches.columns:
+                        bio_smiles = matches['canonical_smiles'].dropna().tolist()[:50]
+                    elif 'SMILES' in matches.columns:
+                        bio_smiles = matches['SMILES'].dropna().tolist()[:50]
+                    else:
+                        st.error("No SMILES column found in matches")
+                        bio_smiles = []
                     st.info(f"📊 Selected {len(bio_smiles)} compounds")
     
     with col2:
@@ -1912,6 +1918,8 @@ with tab_bio:
     
     # Predict button
     if st.button("🔬 Predict Bioactivity", key='predict_bio'):
+        st.write(f"**Debug:** Processing {len(bio_smiles)} SMILES")
+        st.write(f"**First 3 SMILES:** {bio_smiles[:3]}")
         if not bio_smiles:
             st.error("Please provide SMILES first")
         elif not models_dict:
