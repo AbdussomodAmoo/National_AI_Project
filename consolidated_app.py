@@ -220,7 +220,7 @@ def load_bioactivity_models():
     for display_name, file_prefix in model_files.items():
         # Try both classification and regression
         class_path = f"{model_dir}/{file_prefix}_classification_model.joblib"
-        reg_path = f"{model_dir}/{file_prefix}_regression_model.joblib"
+        reg_path = f"{model_dir}/{file_prefix}_regression.joblib"
 
         loaded = False
         error_msg = None # Stores error message
