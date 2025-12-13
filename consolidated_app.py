@@ -199,8 +199,15 @@ def load_bioactivity_models():
     """Load all trained bioactivity models"""
     models = {}
     missing_models = []
-    model_dir = "https://github.com/AbdussomodAmoo/National_AI_Project/tree/main/models/bioactivity"
-    
+    model_dir = "models/bioactivity"
+
+    # ✅ CHECK IF DIRECTORY EXISTS
+    if not os.path.exists(model_dir):
+        st.error(f"❌ Directory not found: {model_dir}")
+        st.info(f"💡 Current working directory: {os.getcwd()}")
+        st.info(f"💡 Files in current directory: {os.listdir('.')}")
+        return models
+        
     model_files = {
         
         'Cancer (EGFR)': 'cancer_EGFR',
@@ -216,23 +223,36 @@ def load_bioactivity_models():
         reg_path = f"{model_dir}/{file_prefix}_regression_model.joblib"
 
         loaded = False
-        
+
+        # Try classification
         if os.path.exists(class_path):
-            models[display_name] = {
-                'model': joblib.load(class_path),
-                'type': 'classification'
-            }
-            loaded = True
-            
-        
-        elif not loaded and os.path.exists(reg_path):
-            models[display_name] = {
-                'model': joblib.load(reg_path),
-                'type': 'regression'
-            }
-           
+            try:
+                st.write(f"🔄 Loading {class_path}...")  # ✅ DEBUG
+                models[display_name] = {
+                    'model': joblib.load(class_path),
+                    'type': 'classification'
+                }
+                loaded = True
+                st.write(f"✅ Loaded {display_name} (classification)")  # ✅ DEBUG
+            except Exception as e:
+                st.error(f"❌ Failed to load {class_path}: {e}")
+
+        # Try regression if classification failed
+        if not loaded and os.path.exists(reg_path):
+            try:
+                st.write(f"🔄 Loading {reg_path}...")  # ✅ DEBUG
+                models[display_name] = {
+                    'model': joblib.load(reg_path),
+                    'type': 'regression'
+                }
+                loaded = True
+                st.write(f"✅ Loaded {display_name} (regression)")  # ✅ DEBUG
+            except Exception as e:
+                st.error(f"❌ Failed to load {reg_path}: {e}")
+                           
         if not loaded:
             missing_models.append(display_name)
+            st.error(f"❌ Failed to load {reg_path}: {e}")
 
     # Display status
     if models:
