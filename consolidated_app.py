@@ -223,6 +223,7 @@ def load_bioactivity_models():
         reg_path = f"{model_dir}/{file_prefix}_regression_model.joblib"
 
         loaded = False
+        error_msg = None # Stores error message
 
         # Try classification
         if os.path.exists(class_path):
@@ -235,6 +236,7 @@ def load_bioactivity_models():
                 loaded = True
                 st.write(f"✅ Loaded {display_name} (classification)")  # ✅ DEBUG
             except Exception as e:
+                error_msg = str(e) # Save error
                 st.error(f"❌ Failed to load {class_path}: {e}")
 
         # Try regression if classification failed
@@ -248,7 +250,8 @@ def load_bioactivity_models():
                 loaded = True
                 st.write(f"✅ Loaded {display_name} (regression)")  # ✅ DEBUG
             except Exception as e:
-                st.error(f"❌ Failed to load {reg_path}: {e}")
+                error_msg = str(e)  # ✅ Save error
+                st.warning(f"❌ Failed to load {reg_path}: {e}")
                            
         if not loaded:
             missing_models.append(display_name)
