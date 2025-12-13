@@ -255,7 +255,8 @@ def load_bioactivity_models():
                            
         if not loaded:
             missing_models.append(display_name)
-            st.error(f"❌ Failed to load {reg_path}: {e}")
+            st.warning(f"⚠️ No model found for {display_name}")
+            
 
     # Display status
     if models:
