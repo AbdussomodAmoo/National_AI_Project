@@ -378,32 +378,284 @@ def predict_bioactivity(smiles, target_name, models_dict):
 # ============================================================================
 # MOLECULAR DOCKING
 # ============================================================================
-# Add this function (based on your working code)
-def perform_docking_wrapper(smiles, target_name):
+# Global dictionary to store configured docker instances
+all_dockers = {}
+def perform_docking_for_target(smiles, target_name, debug=False):
     """
-    Wrapper for your existing docking function
-    Maps target display names to file prefixes
+    Executes a molecular docking simulation for a single compound against a specific target.
+
+    Parameters:
+    -----------
+    smiles : str
+        The SMILES string of the compound to dock.
+    target_name : str
+        The name of the target protein (e.g., 'cancer_EGFR').
+    debug : bool
+        If True, prints detailed debug messages during the workflow.
+
+    Returns:
+    --------
+    dict: {'target': str, 'smiles': str, 'binding_energy': float or None, 'status': str}
     """
+    if target_name not in all_dockers:
+        return {
+            'target': target_name,
+            'smiles': smiles,
+            'binding_energy': None,
+            'status': f"Error: Target '{target_name}' not found/prepared."
+        }
+
+    docker = all_dockers[target_name]
+
+    if debug:
+        st.write(f"DEBUG: Starting docking for SMILES: {smiles} on target: {target_name}")
+
+    # Execute the docking workflow
+    energy = docker.dock_compound(smiles)
+
+    if energy is not None:
+        status = 'Success'
+        if debug:
+            st.write(f"DEBUG: Docking successful. Energy: {energy:.2f} kcal/mol.")
+    else:
+        status = 'Failed'
+        if debug:
+            st.write(f"DEBUG: Docking failed.")
+
+    return {
+        'target': target_name,
+        'smiles': smiles,
+        'binding_energy': energy,
+        'status': status
+    }
     
+def initialize_docking_agents(smiles, target_name):
+    """
+    Initialize all docking agents from .pdbqt files
+    """
+    global all_dockers
+
+    protein_dir = 'proteins' # Protein's folder
     # Map display names to your target file prefixes
-    target_mapping = {
-        'Cancer (EGFR)': 'cancer_EGFR.pdbqt',
-        'Cancer (BCR_ABL)': 'cancer_BCR_ABL.pdbqt',
-        'Malaria (DHFR)': 'malaria_dhfr.pdbqt',
-        #'Diabetes (DPP4)': 'diabetes_DPP4.pdbqt',
+    target_configs = {
+        'Cancer (EGFR)': 'cancer_EGFR',
+        'Cancer (BCR_ABL)': 'cancer_BCR_ABL',
+        'Malaria (DHFR)': 'malaria_dhfr',
+        #'Diabetes (DPP4)': 'diabetes_DPP4',
         #'HIV (Protease)': 'hiv_Protease',
         #'TB (InhA)': 'tuberculosis_InhA'
     }
     
-    target_file_prefix = target_mapping.get(target_name)
+    for target_key, file_prefix in target_configs.items():
+        pdbqt_path = f"{protein_dir}/{file_prefix}.pdbqt"
+        
+        if os.path.exists(pdbqt_path):
+            try:
+                # Initialize your SimpleDockingAgent here
+                class SimpleDockingAgent:
+                    """
+                    Minimal AutoDock Vina wrapper with robust error reporting.
+                    """
+                
+                    def __init__(self, protein_pdbqt, binding_site):
+                        """
+                        Parameters:
+                        -----------
+                        protein_pdbqt : str
+                            Path to prepared protein PDBQT file
+                        binding_site : dict
+                            {'center': (x, y, z), 'size': (x, y, z)}
+                        """
+                        self.protein_pdbqt = protein_pdbqt
+                        self.center = binding_site['center']
+                        self.size = binding_site['size']
+                
+                    def smiles_to_3d(self, smiles):
+                        """
+                        Convert SMILES to 3D molecule
+                        """
+                        try:
+                            mol = Chem.MolFromSmiles(smiles)
+                            if mol is None:
+                                return None
+                
+                            # Add hydrogens
+                            mol = Chem.AddHs(mol)
+                
+                            # Generate 3D coordinates
+                            params = AllChem.ETKDG()
+                            params.randomSeed = 42
+                
+                            if AllChem.EmbedMolecule(mol, params) != 0:
+                                return None
+                
+                            # Optimize geometry
+                            AllChem.UFFOptimizeMolecule(mol)
+                
+                            return mol
+                
+                        except Exception as e:
+                            print(f"3D generation failed: {e}")
+                            return None
+                
+                    def mol_to_pdbqt(self, mol):
+                        """
+                        Convert RDKit molecule to PDBQT string using Meeko
+                        """
+                        preparator = MoleculePreparation()
+                        mol_setups = preparator.prepare(mol)
+                        # Note: error_msg is not used here but is returned by Meeko
+                        pdbqt_string, is_ok, _ = PDBQTWriterLegacy.write_string(mol_setups[0])
+                
+                        return pdbqt_string if is_ok else None
+                
+                    def run_vina(self, ligand_pdbqt_content):
+                        """
+                        Run AutoDock Vina docking with built-in error reporting.
+                        (FIXED: Removed unsupported '--log' and parse stdout instead)
+                        """
+                        ligand_file, output_file = None, None
+                
+                        try:
+                            # 1. Write ligand PDBQT to temp file
+                            with tempfile.NamedTemporaryFile(suffix='_ligand.pdbqt', delete=False, mode='w') as f:
+                                f.write(ligand_pdbqt_content)
+                                ligand_file = f.name
+                
+                            # 2. Define output files
+                            output_file = ligand_file.replace('_ligand.pdbqt', '_out.pdbqt')
+                
+                            # 3. Build Vina command (Removed '--log' and log_file)
+                            cmd = [
+                                'vina',
+                                '--receptor', self.protein_pdbqt,
+                                '--ligand', ligand_file,
+                                '--out', output_file,
+                                '--center_x', str(self.center[0]),
+                                '--center_y', str(self.center[1]),
+                                '--center_z', str(self.center[2]),
+                                '--size_x', str(self.size[0]),
+                                '--size_y', str(self.size[1]),
+                                '--size_z', str(self.size[2]),
+                                '--exhaustiveness', '8',
+                                '--num_modes', '1',
+                                '--energy_range', '3'
+                            ]
+                
+                            # 4. Run Vina
+                            # Capture stdout to get the scores (since --log is not supported)
+                            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                
+                            # --- CRITICAL ERROR CHECK ---
+                            if result.returncode != 0:
+                                print(f"\n--- VINA EXECUTION FAILED! Return Code: {result.returncode} ---")
+                                print("Command: " + " ".join(cmd))
+                                print("\n--- VINA STDERR (Error Output) ---")
+                                print(result.stderr)
+                                return None
+                
+                            # 5. Parse binding energy from STDOUT
+                            binding_energy = None
+                
+                            # Vina prints the result table to stdout. We look for the first line starting with '1'.
+                            output_lines = result.stdout.splitlines()
+                
+                            for line in output_lines:
+                                # The line format is: 1 | -8.5 | 0.000 / 0.000
+                                if line.strip().startswith('1'):
+                                    # Use a split on whitespace to extract columns
+                                    parts = line.split()
+                
+                                    # Check if the first part is exactly '1' and there's a second part (the score)
+                                    if len(parts) >= 2 and parts[0] == '1':
+                                        try:
+                                            # The binding energy is the second column
+                                            binding_energy = float(parts[1])
+                                            break
+                                        except ValueError:
+                                            # Handle cases where the second part might not be a float
+                                            continue
+                
+                            return binding_energy
+                
+                        except subprocess.TimeoutExpired:
+                            print("Vina timeout (>2 min)")
+                            return None
+                        except Exception as e:
+                            print(f"Vina execution failed: {e}")
+                            return None
+                        finally:
+                            # 6. Cleanup (only ligand and output pdbqt files)
+                            for f in [ligand_file, output_file]:
+                                if f and os.path.exists(f):
+                                    os.remove(f)
+                
+                    def dock_compound(self, smiles):
+                        """
+                        Complete docking workflow for a SMILES string
+                        """
+                        try:
+                            # Step 1: Convert SMILES to 3D
+                            mol = self.smiles_to_3d(smiles)
+                            if mol is None:
+                                return None
+                
+                            # Step 2: Convert to PDBQT format
+                            pdbqt_content = self.mol_to_pdbqt(mol)
+                            if pdbqt_content is None:
+                                return None
+                
+                            # Step 3: Run Vina docking
+                            binding_energy = self.run_vina(pdbqt_content)
+                
+                            return binding_energy
+                
+                        except Exception as e:
+                            print(f"Docking failed for {smiles[:20]}...: {e}")
+                            return None
+                
+                    def dock_batch(self, smiles_list, compound_names=None):
+                        """
+                        Dock multiple compounds
+                        """
+                        results = []
+                
+                        for idx, smiles in enumerate(smiles_list):
+                            name = compound_names[idx] if compound_names else f"Compound_{idx+1}"
+                
+                            print(f"Docking {name} ({idx+1}/{len(smiles_list)})...", end=' ')
+                
+                            energy = self.dock_compound(smiles)
+                
+                            if energy is not None:
+                                print(f"✅ {energy:.2f} kcal/mol")
+                                results.append({
+                                    'name': name,
+                                    'smiles': smiles,
+                                    'binding_energy': energy,
+                                    'status': 'Success'
+                                })
+                            else:
+                                print(f"❌ Failed")
+                                results.append({
+                                    'name': name,
+                                    'smiles': smiles,
+                                    'binding_energy': None,
+                                    'status': 'Failed'
+                                })
+                
+                        return pd.DataFrame(results)
+             
+                all_dockers[target_key] = SimpleDockingAgent(pdbqt_path, ...)
+                st.success(f"✅ Loaded docking target: {target_key}")
+            except Exception as e:
+                st.warning(f"⚠️ Failed to load {target_key}: {e}")
+        else:
+            st.warning(f"⚠️ PDBQT file not found: {pdbqt_path}")
     
-    if not target_file_prefix:
-        return None
+    return len(all_dockers)
+
     
-    # Call your existing perform_docking_for_target function
-    result = perform_docking_for_target(smiles, target_file_prefix, debug=False)
-    
-    return result
 
 # ====================================================
 # RETROSYNTHESIS
@@ -2061,9 +2313,12 @@ with tab_dock:
     # Get key from state
     groq_api_key = st.session_state.get('groq_api_key')
     
-    # Initialize report state
-    if 'docking_report' not in st.session_state:
-        st.session_state['docking_report'] = ""
+    # Initialize docking agents (run once)
+    if 'docking_initialized' not in st.session_state:
+        with st.spinner("Initializing docking targets..."):
+            num_loaded = initialize_docking_agents()
+            st.session_state.docking_initialized = True
+            st.success(f"Loaded {num_loaded} docking targets")
     
     col1, col2 = st.columns([2, 1])
     
@@ -2096,7 +2351,7 @@ with tab_dock:
                 matches = df[df.get('organisms', pd.Series()).astype(str).str.contains(search, case=False, na=False)]
                 
                 if not matches.empty:
-                    dock_smiles = matches['canonical_smiles'].head(10).tolist()
+                    dock_smiles = matches['canonical_smiles'].dropna().head(10).tolist()
                     st.success(f"✅ Found {len(dock_smiles)} compounds from search.")
                 else:
                     st.warning("No matches found in the database.")
@@ -2122,7 +2377,7 @@ with tab_dock:
                 # 1. RUN SIMULATION (Placeholder results)
                 dock_results = []
                 for smiles in dock_smiles:
-                    docking_result = perform_docking_wrapper(smiles, protein)
+                    docking_result = perform_docking_for_target(smiles, protein, debug=False)
                     
                     if docking_result and docking_result['status'] == 'Success':
                         binding_energy = docking_result['binding_energy']
@@ -2149,6 +2404,26 @@ with tab_dock:
                             'Status': '❌ Docking failed'
                         })
                 dock_df = pd.DataFrame(dock_results).sort_values('Binding Energy (kcal/mol)')
+
+                if len(dock_df) > 0:
+                    # Sort by binding energy (lower is better)
+                    dock_df_sorted = dock_df[dock_df['Binding Energy (kcal/mol)'] != 'N/A'].copy()
+                    if len(dock_df_sorted) > 0:
+                        dock_df_sorted = dock_df_sorted.sort_values('Binding Energy (kcal/mol)')
+                        st.dataframe(dock_df_sorted, use_container_width=True)
+                    else:
+                        st.error("All docking attempts failed")
+                    
+                    st.success(f"✅ Docked {len(dock_results)} compounds")
+                    
+                    csv = dock_df.to_csv(index=False)
+                    st.download_button(
+                        "📥 Download Docking Results",
+                        data=csv,
+                        file_name="docking_results.csv",
+                        mime="text/csv"
+                    )
+
                 
                 # 2. RUN LLM INTERPRETATION
                 client = GroqClient(groq_api_key)
