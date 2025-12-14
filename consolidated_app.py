@@ -400,7 +400,7 @@ def perform_docking_for_target(smiles, target_name, debug=False):
     --------
     dict: {'target': str, 'smiles': str, 'binding_energy': float or None, 'status': str}
     """
-    if target_name not in all_dockers:
+    if target_name not in st.session_state.all_dockers:
         return {
             'target': target_name,
             'smiles': smiles,
@@ -408,7 +408,7 @@ def perform_docking_for_target(smiles, target_name, debug=False):
             'status': f"Error: Target '{target_name}' not found/prepared."
         }
 
-    docker = all_dockers[target_name]
+    docker = st.session_state.all_dockers[target_name]
 
     if debug:
         st.write(f"DEBUG: Starting docking for SMILES: {smiles} on target: {target_name}")
@@ -436,13 +436,14 @@ def initialize_docking_agents():
     """
     Initialize all docking agents from .pdbqt files
     """
-    global all_dockers
+    
 
     protein_dir = 'protein_structure' # Protein's folder
     
     if not os.path.exists(protein_dir):
         st.error(f"❌ Protein directory not found: {protein_dir}")
         return 0
+    loaded_count = 0
     
     for target_key, config in DOCKING_TARGETS.items():
         pdbqt_path = f"{protein_dir}/{target_key}.pdbqt"
@@ -450,14 +451,15 @@ def initialize_docking_agents():
         if os.path.exists(pdbqt_path):
             try:
                 # Initialize SimpleDockingAgent with bonding site
-                all_dockers[target_key] = SimpleDockingAgent(pdbqt_path, config['binding_site'])
+                st.session_state.all_dockers[target_key] = SimpleDockingAgent(pdbqt_path, config['binding_site'])
                 st.success(f"✅ Loaded docking target: {target_key}")
+                loaded_count += 1
             except Exception as e:
                 st.warning(f"⚠️ Failed to load {target_key}: {e}")
         else:
             st.warning(f"⚠️ PDBQT file not found: {pdbqt_path}")
     
-    return len(all_dockers)
+    return loaded_count
 
 # Initialize your SimpleDockingAgent here
 class SimpleDockingAgent:
@@ -2411,7 +2413,7 @@ with tab_dock:
 
     
     # Get key from state
-    groq_api_key = st.session_state.get('groq_api_key')
+    #groq_api_key = st.session_state.get('groq_api_key')
     
     # Initialize docking agents (run once)
     if 'docking_initialized' not in st.session_state:
@@ -2461,9 +2463,9 @@ with tab_dock:
             elif search:
                 st.error("❌ Database not available for searching.")
     with col2:
-        # ✅ FIXED: Show ALL loaded targets dynamically
-        #if not all_dockers:
-        #    st.error("❌ No docking targets available")
+        # ✅ Check session_state for loaded targets
+        if not st.session_state.all_dockers:
+            st.error("❌ No docking targets available")
         #    st.info("Check that .pdbqt files exist in 'proteins/' folder")
         #    st.stop()
         
@@ -2480,18 +2482,13 @@ with tab_dock:
             'inflammation_COX2': 'Inflammation (COX2)',
         }
         
-        # ✅ Build dropdown ONLY from loaded targets
-        available_options = {}
-        for target_key in all_dockers.keys():
-            display_name = target_display_names.get(target_key, target_key)
-            available_options[display_name] = target_key
+        # ✅ Build dropdown options ONLY from loaded targets
+        available_options = {
+            target_display_names.get(key, key): key 
+            for key in st.session_state.all_dockers.keys()
+        }
         
-        if not available_options:
-            st.error("❌ No targets successfully loaded")
-            st.stop()
-        
-        # Show loaded targets count
-        st.success(f"✅ {len(available_options)} targets available")
+        st.info(f"📊 {len(available_options)} targets loaded")
         
         protein_display = st.selectbox(
             "Target Protein:",
@@ -2499,14 +2496,15 @@ with tab_dock:
         )
         
         protein = available_options[protein_display]
+    
         exhaustiveness = st.slider("Exhaustiveness:", 1, 10, 8)
 
     # --- Run Docking Simulation & Interpretation ---
     if st.button("🎯 Run Docking & Analysis", key='run_dock', type="primary"):
         if not dock_smiles:
             st.error("Please provide SMILES first")
-        elif not groq_api_key:
-            st.error("Please enter your Groq API Key in the sidebar to run the simulation and analysis.")
+        #elif not groq_api_key:
+        #    st.error("Please enter your Groq API Key in the sidebar to run the simulation and analysis.")
         else:
             with st.spinner(f"Docking {len(dock_smiles)} compounds and generating report..."):
                 # 1. RUN SIMULATION (Placeholder results)
@@ -2514,7 +2512,7 @@ with tab_dock:
                 for smiles in dock_smiles:
                     docking_result = perform_docking_for_target(smiles, protein, debug=False)
                     
-                    if docking_result and docking_result['status'] == 'Success':
+                    if docking_result['binding_energy] and docking_result['status'] == 'Success':
                         binding_energy = docking_result['binding_energy']
                         
                         # Classify affinity based on energy
