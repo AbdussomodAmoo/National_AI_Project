@@ -22,7 +22,10 @@ import zipfile
 import shutil
 import joblib
 import numpy as np
-from rdkit.Chem import rdMolDescriptors
+from rdkit.Chem import rdMolDescriptors AllChem
+from meeko import MoleculePreparation, PDBQTWriterLegacy
+import tempfile
+import subprocess
 
 
 VISION_AVAILABLE = True
@@ -435,218 +438,19 @@ def initialize_docking_agents(smiles, target_name):
     """
     global all_dockers
 
-    protein_dir = 'proteins' # Protein's folder
-    # Map display names to your target file prefixes
-    target_configs = {
-        'Cancer (EGFR)': 'cancer_EGFR',
-        'Cancer (BCR_ABL)': 'cancer_BCR_ABL',
-        'Malaria (DHFR)': 'malaria_dhfr',
-        #'Diabetes (DPP4)': 'diabetes_DPP4',
-        #'HIV (Protease)': 'hiv_Protease',
-        #'TB (InhA)': 'tuberculosis_InhA'
-    }
+    protein_dir = 'protein_structure' # Protein's folder
     
-    for target_key, file_prefix in target_configs.items():
+    if not os.path.exists(protein_dir):
+        st.error(f"❌ Protein directory not found: {protein_dir}")
+        return 0
+    
+    for target_key, config in DOCKING_TARGETS.items():
         pdbqt_path = f"{protein_dir}/{file_prefix}.pdbqt"
         
         if os.path.exists(pdbqt_path):
             try:
-                # Initialize your SimpleDockingAgent here
-                class SimpleDockingAgent:
-                    """
-                    Minimal AutoDock Vina wrapper with robust error reporting.
-                    """
-                
-                    def __init__(self, protein_pdbqt, binding_site):
-                        """
-                        Parameters:
-                        -----------
-                        protein_pdbqt : str
-                            Path to prepared protein PDBQT file
-                        binding_site : dict
-                            {'center': (x, y, z), 'size': (x, y, z)}
-                        """
-                        self.protein_pdbqt = protein_pdbqt
-                        self.center = binding_site['center']
-                        self.size = binding_site['size']
-                
-                    def smiles_to_3d(self, smiles):
-                        """
-                        Convert SMILES to 3D molecule
-                        """
-                        try:
-                            mol = Chem.MolFromSmiles(smiles)
-                            if mol is None:
-                                return None
-                
-                            # Add hydrogens
-                            mol = Chem.AddHs(mol)
-                
-                            # Generate 3D coordinates
-                            params = AllChem.ETKDG()
-                            params.randomSeed = 42
-                
-                            if AllChem.EmbedMolecule(mol, params) != 0:
-                                return None
-                
-                            # Optimize geometry
-                            AllChem.UFFOptimizeMolecule(mol)
-                
-                            return mol
-                
-                        except Exception as e:
-                            print(f"3D generation failed: {e}")
-                            return None
-                
-                    def mol_to_pdbqt(self, mol):
-                        """
-                        Convert RDKit molecule to PDBQT string using Meeko
-                        """
-                        preparator = MoleculePreparation()
-                        mol_setups = preparator.prepare(mol)
-                        # Note: error_msg is not used here but is returned by Meeko
-                        pdbqt_string, is_ok, _ = PDBQTWriterLegacy.write_string(mol_setups[0])
-                
-                        return pdbqt_string if is_ok else None
-                
-                    def run_vina(self, ligand_pdbqt_content):
-                        """
-                        Run AutoDock Vina docking with built-in error reporting.
-                        (FIXED: Removed unsupported '--log' and parse stdout instead)
-                        """
-                        ligand_file, output_file = None, None
-                
-                        try:
-                            # 1. Write ligand PDBQT to temp file
-                            with tempfile.NamedTemporaryFile(suffix='_ligand.pdbqt', delete=False, mode='w') as f:
-                                f.write(ligand_pdbqt_content)
-                                ligand_file = f.name
-                
-                            # 2. Define output files
-                            output_file = ligand_file.replace('_ligand.pdbqt', '_out.pdbqt')
-                
-                            # 3. Build Vina command (Removed '--log' and log_file)
-                            cmd = [
-                                'vina',
-                                '--receptor', self.protein_pdbqt,
-                                '--ligand', ligand_file,
-                                '--out', output_file,
-                                '--center_x', str(self.center[0]),
-                                '--center_y', str(self.center[1]),
-                                '--center_z', str(self.center[2]),
-                                '--size_x', str(self.size[0]),
-                                '--size_y', str(self.size[1]),
-                                '--size_z', str(self.size[2]),
-                                '--exhaustiveness', '8',
-                                '--num_modes', '1',
-                                '--energy_range', '3'
-                            ]
-                
-                            # 4. Run Vina
-                            # Capture stdout to get the scores (since --log is not supported)
-                            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-                
-                            # --- CRITICAL ERROR CHECK ---
-                            if result.returncode != 0:
-                                print(f"\n--- VINA EXECUTION FAILED! Return Code: {result.returncode} ---")
-                                print("Command: " + " ".join(cmd))
-                                print("\n--- VINA STDERR (Error Output) ---")
-                                print(result.stderr)
-                                return None
-                
-                            # 5. Parse binding energy from STDOUT
-                            binding_energy = None
-                
-                            # Vina prints the result table to stdout. We look for the first line starting with '1'.
-                            output_lines = result.stdout.splitlines()
-                
-                            for line in output_lines:
-                                # The line format is: 1 | -8.5 | 0.000 / 0.000
-                                if line.strip().startswith('1'):
-                                    # Use a split on whitespace to extract columns
-                                    parts = line.split()
-                
-                                    # Check if the first part is exactly '1' and there's a second part (the score)
-                                    if len(parts) >= 2 and parts[0] == '1':
-                                        try:
-                                            # The binding energy is the second column
-                                            binding_energy = float(parts[1])
-                                            break
-                                        except ValueError:
-                                            # Handle cases where the second part might not be a float
-                                            continue
-                
-                            return binding_energy
-                
-                        except subprocess.TimeoutExpired:
-                            print("Vina timeout (>2 min)")
-                            return None
-                        except Exception as e:
-                            print(f"Vina execution failed: {e}")
-                            return None
-                        finally:
-                            # 6. Cleanup (only ligand and output pdbqt files)
-                            for f in [ligand_file, output_file]:
-                                if f and os.path.exists(f):
-                                    os.remove(f)
-                
-                    def dock_compound(self, smiles):
-                        """
-                        Complete docking workflow for a SMILES string
-                        """
-                        try:
-                            # Step 1: Convert SMILES to 3D
-                            mol = self.smiles_to_3d(smiles)
-                            if mol is None:
-                                return None
-                
-                            # Step 2: Convert to PDBQT format
-                            pdbqt_content = self.mol_to_pdbqt(mol)
-                            if pdbqt_content is None:
-                                return None
-                
-                            # Step 3: Run Vina docking
-                            binding_energy = self.run_vina(pdbqt_content)
-                
-                            return binding_energy
-                
-                        except Exception as e:
-                            print(f"Docking failed for {smiles[:20]}...: {e}")
-                            return None
-                
-                    def dock_batch(self, smiles_list, compound_names=None):
-                        """
-                        Dock multiple compounds
-                        """
-                        results = []
-                
-                        for idx, smiles in enumerate(smiles_list):
-                            name = compound_names[idx] if compound_names else f"Compound_{idx+1}"
-                
-                            print(f"Docking {name} ({idx+1}/{len(smiles_list)})...", end=' ')
-                
-                            energy = self.dock_compound(smiles)
-                
-                            if energy is not None:
-                                print(f"✅ {energy:.2f} kcal/mol")
-                                results.append({
-                                    'name': name,
-                                    'smiles': smiles,
-                                    'binding_energy': energy,
-                                    'status': 'Success'
-                                })
-                            else:
-                                print(f"❌ Failed")
-                                results.append({
-                                    'name': name,
-                                    'smiles': smiles,
-                                    'binding_energy': None,
-                                    'status': 'Failed'
-                                })
-                
-                        return pd.DataFrame(results)
-             
-                all_dockers[target_key] = SimpleDockingAgent(pdbqt_path, ...)
+                # Initialize SimpleDockingAgent with bonding site
+                all_dockers[target_key] = SimpleDockingAgent(pdbqt_path, config['binding_site'])
                 st.success(f"✅ Loaded docking target: {target_key}")
             except Exception as e:
                 st.warning(f"⚠️ Failed to load {target_key}: {e}")
@@ -654,6 +458,301 @@ def initialize_docking_agents(smiles, target_name):
             st.warning(f"⚠️ PDBQT file not found: {pdbqt_path}")
     
     return len(all_dockers)
+
+# Initialize your SimpleDockingAgent here
+class SimpleDockingAgent:
+    """
+    Minimal AutoDock Vina wrapper with robust error reporting.
+    """
+
+    def __init__(self, protein_pdbqt, binding_site):
+        """
+        Parameters:
+        -----------
+        protein_pdbqt : str
+            Path to prepared protein PDBQT file
+        binding_site : dict
+            {'center': (x, y, z), 'size': (x, y, z)}
+        """
+        self.protein_pdbqt = protein_pdbqt
+        self.center = binding_site['center']
+        self.size = binding_site['size']
+
+    def smiles_to_3d(self, smiles):
+        """
+        Convert SMILES to 3D molecule
+        """
+        try:
+            mol = Chem.MolFromSmiles(smiles)
+            if mol is None:
+                return None
+
+            # Add hydrogens
+            mol = Chem.AddHs(mol)
+
+            # Generate 3D coordinates
+            params = AllChem.ETKDG()
+            params.randomSeed = 42
+
+            if AllChem.EmbedMolecule(mol, params) != 0:
+                return None
+
+            # Optimize geometry
+            AllChem.UFFOptimizeMolecule(mol)
+
+            return mol
+
+        except Exception as e:
+            print(f"3D generation failed: {e}")
+            return None
+
+    def mol_to_pdbqt(self, mol):
+        """
+        Convert RDKit molecule to PDBQT string using Meeko
+        """
+        preparator = MoleculePreparation()
+        mol_setups = preparator.prepare(mol)
+        # Note: error_msg is not used here but is returned by Meeko
+        pdbqt_string, is_ok, _ = PDBQTWriterLegacy.write_string(mol_setups[0])
+
+        return pdbqt_string if is_ok else None
+
+    def run_vina(self, ligand_pdbqt_content):
+        """
+        Run AutoDock Vina docking with built-in error reporting.
+        (FIXED: Removed unsupported '--log' and parse stdout instead)
+        """
+        ligand_file, output_file = None, None
+
+        try:
+            # 1. Write ligand PDBQT to temp file
+            with tempfile.NamedTemporaryFile(suffix='_ligand.pdbqt', delete=False, mode='w') as f:
+                f.write(ligand_pdbqt_content)
+                ligand_file = f.name
+
+            # 2. Define output files
+            output_file = ligand_file.replace('_ligand.pdbqt', '_out.pdbqt')
+
+            # 3. Build Vina command (Removed '--log' and log_file)
+            cmd = [
+                'vina',
+                '--receptor', self.protein_pdbqt,
+                '--ligand', ligand_file,
+                '--out', output_file,
+                '--center_x', str(self.center[0]),
+                '--center_y', str(self.center[1]),
+                '--center_z', str(self.center[2]),
+                '--size_x', str(self.size[0]),
+                '--size_y', str(self.size[1]),
+                '--size_z', str(self.size[2]),
+                '--exhaustiveness', '8',
+                '--num_modes', '1',
+                '--energy_range', '3'
+            ]
+
+            # 4. Run Vina
+            # Capture stdout to get the scores (since --log is not supported)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+
+            # --- CRITICAL ERROR CHECK ---
+            if result.returncode != 0:
+                print(f"\n--- VINA EXECUTION FAILED! Return Code: {result.returncode} ---")
+                print("Command: " + " ".join(cmd))
+                print("\n--- VINA STDERR (Error Output) ---")
+                print(result.stderr)
+                return None
+
+            # 5. Parse binding energy from STDOUT
+            binding_energy = None
+
+            # Vina prints the result table to stdout. We look for the first line starting with '1'.
+            output_lines = result.stdout.splitlines()
+
+            for line in output_lines:
+                # The line format is: 1 | -8.5 | 0.000 / 0.000
+                if line.strip().startswith('1'):
+                    # Use a split on whitespace to extract columns
+                    parts = line.split()
+
+                    # Check if the first part is exactly '1' and there's a second part (the score)
+                    if len(parts) >= 2 and parts[0] == '1':
+                        try:
+                            # The binding energy is the second column
+                            binding_energy = float(parts[1])
+                            break
+                        except ValueError:
+                            # Handle cases where the second part might not be a float
+                            continue
+
+            return binding_energy
+
+        except subprocess.TimeoutExpired:
+            print("Vina timeout (>2 min)")
+            return None
+        except Exception as e:
+            print(f"Vina execution failed: {e}")
+            return None
+        finally:
+            # 6. Cleanup (only ligand and output pdbqt files)
+            for f in [ligand_file, output_file]:
+                if f and os.path.exists(f):
+                    os.remove(f)
+
+    def dock_compound(self, smiles):
+        """
+        Complete docking workflow for a SMILES string
+        """
+        try:
+            # Step 1: Convert SMILES to 3D
+            mol = self.smiles_to_3d(smiles)
+            if mol is None:
+                return None
+
+            # Step 2: Convert to PDBQT format
+            pdbqt_content = self.mol_to_pdbqt(mol)
+            if pdbqt_content is None:
+                return None
+
+            # Step 3: Run Vina docking
+            binding_energy = self.run_vina(pdbqt_content)
+
+            return binding_energy
+
+        except Exception as e:
+            print(f"Docking failed for {smiles[:20]}...: {e}")
+            return None
+
+    def dock_batch(self, smiles_list, compound_names=None):
+        """
+        Dock multiple compounds
+        """
+        results = []
+
+        for idx, smiles in enumerate(smiles_list):
+            name = compound_names[idx] if compound_names else f"Compound_{idx+1}"
+
+            print(f"Docking {name} ({idx+1}/{len(smiles_list)})...", end=' ')
+
+            energy = self.dock_compound(smiles)
+
+            if energy is not None:
+                print(f"✅ {energy:.2f} kcal/mol")
+                results.append({
+                    'name': name,
+                    'smiles': smiles,
+                    'binding_energy': energy,
+                    'status': 'Success'
+                })
+            else:
+                print(f"❌ Failed")
+                results.append({
+                    'name': name,
+                    'smiles': smiles,
+                    'binding_energy': None,
+                    'status': 'Failed'
+                })
+
+        return pd.DataFrame(results)
+
+DOCKING_TARGETS = {
+    # CANCER TARGETS
+    'cancer_EGFR': {
+        'pdb_id': '1M17',
+        'binding_site': {'center': (25.0, 12.5, 40.3), 'size': (20, 20, 20)},
+        'models': ['cancer_EGFR_regression', 'cancer_EGFR_classification']
+    },
+    'cancer_BCR_ABL': {
+        'pdb_id': '2HYY',
+        'binding_site': {'center': (15.3, 22.1, 18.7), 'size': (20, 20, 20)},
+        'models': ['cancer_BCR_ABL_regression', 'cancer_BCR_ABL_classification']
+    },
+    'cancer_HER2': {
+        'pdb_id': '3PP0',
+        'binding_site': {'center': (18.5, 14.2, 32.1), 'size': (20, 20, 20)},
+        'models': ['cancer_HER2_regression', 'cancer_HER2_classification']
+    },
+
+    # HIV TARGETS
+    'hiv_RT': {
+        'pdb_id': '1RTD',
+        'binding_site': {'center': (15.2, 18.7, 22.1), 'size': (20, 20, 20)},
+        'models': ['hiv_HIV_RT_regression', 'hiv_HIV_RT_classification']
+    },
+    'hiv_Protease': {
+        'pdb_id': '1HXB',
+        'binding_site': {'center': (0.5, 1.2, -2.3), 'size': (20, 20, 20)},
+        'models': ['hiv_HIV_Protease_regression', 'hiv_HIV_Protease_classification']
+    },
+    'hiv_Integrase': {
+        'pdb_id': '1QS4',
+        'binding_site': {'center': (12.3, 8.5, 15.2), 'size': (20, 20, 20)},
+        'models': ['hiv_HIV_Integrase_regression', 'hiv_HIV_Integrase_classification']
+    },
+
+    # DIABETES TARGETS
+    'diabetes_DPP4': {
+        'pdb_id': '1X70',
+        'binding_site': {'center': (25.1, 15.3, 10.8), 'size': (20, 20, 20)},
+        'models': ['diabetes_DPP4_regression', 'diabetes_DPP4_classification']
+    },
+
+    # HYPERTENSION
+    'hypertension_ACE': {
+        'pdb_id': '1O86',
+        'binding_site': {'center': (30.2, 28.5, 42.1), 'size': (20, 20, 20)},
+        'models': ['hypertension_ACE_regression', 'hypertension_ACE_classification']
+    },
+
+    # INFLAMMATION
+    'inflammation_COX2': {
+        'pdb_id': '5KIR',
+        'binding_site': {'center': (28.5, 22.3, 15.8), 'size': (20, 20, 20)},
+        'models': ['inflammation_COX2_regression', 'inflammation_COX2_classification']
+    },
+    'cancer_CDK': {
+        'pdb_id': '1HCK',
+        'binding_site': {'center': (15.5, 22.3, 18.8), 'size': (20, 20, 20)},
+        'models': ['cancer_CDK_regression', 'cancer_CDK_classification']
+    },
+    'tuberculosis': {
+        'pdb_id': '4TZK',
+        'binding_site': {'center': (12.8, 18.5, 22.3), 'size': (20, 20, 20)},
+        'models': ['tuberculosis_classification']
+    },
+    'inflammation_LOX5': {
+        'pdb_id': '3O8Y',
+        'binding_site': {'center': (20.5, 15.3, 25.1), 'size': (20, 20, 20)},
+        'models': ['inflammation_LOX5_regression', 'inflammation_LOX5_classification']
+    },
+    'tuberculosis_InhA': {
+        'pdb_id': '4TZK',
+        'binding_site': {'center': (12.8, 18.5, 22.3), 'size': (20, 20, 20)},
+        'models': ['tuberculosis_InhA_regression', 'tuberculosis_classification']
+    },
+    'cancer_VEGFR2': {
+        'pdb_id': '3WZE',
+        'binding_site': {'center': (30.2, 18.5, 22.7), 'size': (20, 20, 20)},
+        'models': ['cancer_VEGFR2_regression', 'cancer_VEGFR2_classification']
+    },
+    'cancer_Topo_II': {
+        'pdb_id': '3QX3',
+        'binding_site': {'center': (25.8, 32.1, 15.5), 'size': (20, 20, 20)},
+        'models': ['cancer_Topo_II_classification']
+    },
+    'diabetes_Alpha_Glucosidase': {
+        'pdb_id': '3L4Y',
+        'binding_site': {'center': (22.5, 28.3, 35.2), 'size': (20, 20, 20)},
+        'models': ['diabetes_Alpha_Glucosidase_regression', 'diabetes_Alpha_Glucosidase_classification']
+    },
+    'diabetes_PPAR_gamma': {
+        'pdb_id': '2PRG',
+        'binding_site': {'center': (18.3, 12.7, 20.8), 'size': (20, 20, 20)},
+        'models': ['diabetes_PPAR_gamma_classification']
+    }
+     
+}
+
+
 
     
 
@@ -2309,6 +2408,7 @@ with tab_bio:
 with tab_dock:
     st.markdown("### 🎯 Molecular Docking")
     st.info("Simulate compound binding to protein targets")
+
     
     # Get key from state
     groq_api_key = st.session_state.get('groq_api_key')
@@ -2318,8 +2418,11 @@ with tab_dock:
         with st.spinner("Initializing docking targets..."):
             num_loaded = initialize_docking_agents()
             st.session_state.docking_initialized = True
-            st.success(f"Loaded {num_loaded} docking targets")
-    
+            if num_loaded > 0:
+                st.success(f"✅ Loaded {num_loaded} docking targets")
+            else:
+                st.error("❌ No docking targets loaded. Check protein files.")
+   
     col1, col2 = st.columns([2, 1])
     
     with col1:
@@ -2359,11 +2462,32 @@ with tab_dock:
                 st.error("❌ Database not available for searching.")
 
     with col2:
-        protein = st.selectbox(
+        # Only show available targets
+        available_targets = {
+            'Cancer (EGFR)': 'cancer_EGFR',
+            'Malaria (DHFR)': 'malaria_dhfr',
+            #'HIV (Protease)': 'hiv_Protease',
+            #'Diabetes (DPP4)': 'diabetes_DPP4',
+            #'TB (InhA)': 'tuberculosis_InhA'
+        }
+        
+        # Filter to only show loaded targets
+        loaded_targets = {
+            display: key 
+            for display, key in available_targets.items() 
+            if key in all_dockers
+        }
+        
+        if not loaded_targets:
+            st.error("❌ No docking targets available")
+            st.stop()
+        
+        protein_display = st.selectbox(
             "Target Protein:",
-            ["Cancer (BCR_ABL)", "Malaria DHFR", 'Cancer (EGFR)'],
-            key='dock_protein' # Added key for state tracking
+            list(loaded_targets.keys())
         )
+        
+        protein = loaded_targets[protein_display]
         exhaustiveness = st.slider("Exhaustiveness:", 1, 10, 8)
 
     # --- Run Docking Simulation & Interpretation ---
