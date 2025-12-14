@@ -22,7 +22,7 @@ import zipfile
 import shutil
 import joblib
 import numpy as np
-from rdkit.Chem import rdMolDescriptors AllChem
+from rdkit.Chem import rdMolDescriptors, AllChem
 from meeko import MoleculePreparation, PDBQTWriterLegacy
 import tempfile
 import subprocess
