@@ -2460,34 +2460,45 @@ with tab_dock:
                     st.warning("No matches found in the database.")
             elif search:
                 st.error("❌ Database not available for searching.")
-
     with col2:
-        # Only show available targets
-        available_targets = {
-            'Cancer (EGFR)': 'cancer_EGFR',
-            'Malaria (DHFR)': 'malaria_dhfr',
-            #'HIV (Protease)': 'hiv_Protease',
-            #'Diabetes (DPP4)': 'diabetes_DPP4',
-            #'TB (InhA)': 'tuberculosis_InhA'
-        }
-        
-        # Filter to only show loaded targets
-        loaded_targets = {
-            display: key 
-            for display, key in available_targets.items() 
-            if key in all_dockers
-        }
-        
-        if not loaded_targets:
+        # ✅ FIXED: Show ALL loaded targets dynamically
+        if not all_dockers:
             st.error("❌ No docking targets available")
+            st.info("Check that .pdbqt files exist in 'proteins/' folder")
             st.stop()
+        
+        # Create display names from loaded targets
+        target_display_names = {
+            'cancer_EGFR': 'Cancer (EGFR)',
+            'cancer_BCR_ABL': 'Cancer (BCR ABL)',
+            'cancer_CDK': 'Cancer (CDK)',
+            'cancer_VEGFR2': 'Cancer (VEGFR2)',
+            'hiv_Protease': 'HIV (Protease)',
+            'diabetes_DPP4': 'Diabetes (DPP4)',
+            'tuberculosis_InhA': 'TB (InhA)',
+            'hypertension_ACE': 'Hypertension (ACE)',
+            'inflammation_COX2': 'Inflammation (COX2)',
+        }
+        
+        # ✅ Build dropdown ONLY from loaded targets
+        available_options = {}
+        for target_key in all_dockers.keys():
+            display_name = target_display_names.get(target_key, target_key)
+            available_options[display_name] = target_key
+        
+        if not available_options:
+            st.error("❌ No targets successfully loaded")
+            st.stop()
+        
+        # Show loaded targets count
+        st.success(f"✅ {len(available_options)} targets available")
         
         protein_display = st.selectbox(
             "Target Protein:",
-            list(loaded_targets.keys())
+            list(available_options.keys())
         )
         
-        protein = loaded_targets[protein_display]
+        protein = available_options[protein_display]
         exhaustiveness = st.slider("Exhaustiveness:", 1, 10, 8)
 
     # --- Run Docking Simulation & Interpretation ---
