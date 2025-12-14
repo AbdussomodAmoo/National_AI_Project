@@ -445,7 +445,7 @@ def initialize_docking_agents():
         return 0
     
     for target_key, config in DOCKING_TARGETS.items():
-        pdbqt_path = f"{protein_dir}/{file_prefix}.pdbqt"
+        pdbqt_path = f"{protein_dir}/{target_key}.pdbqt"
         
         if os.path.exists(pdbqt_path):
             try:
