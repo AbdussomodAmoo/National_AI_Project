@@ -432,7 +432,7 @@ def perform_docking_for_target(smiles, target_name, debug=False):
         'status': status
     }
     
-def initialize_docking_agents(smiles, target_name):
+def initialize_docking_agents():
     """
     Initialize all docking agents from .pdbqt files
     """
