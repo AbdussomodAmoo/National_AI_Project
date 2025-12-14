@@ -2462,10 +2462,10 @@ with tab_dock:
                 st.error("❌ Database not available for searching.")
     with col2:
         # ✅ FIXED: Show ALL loaded targets dynamically
-        if not all_dockers:
-            st.error("❌ No docking targets available")
-            st.info("Check that .pdbqt files exist in 'proteins/' folder")
-            st.stop()
+        #if not all_dockers:
+        #    st.error("❌ No docking targets available")
+        #    st.info("Check that .pdbqt files exist in 'proteins/' folder")
+        #    st.stop()
         
         # Create display names from loaded targets
         target_display_names = {
