@@ -382,7 +382,7 @@ def predict_bioactivity(smiles, target_name, models_dict):
 # MOLECULAR DOCKING
 # ============================================================================
 # Global dictionary to store configured docker instances
-all_dockers = {}
+#all_dockers = {}
 def perform_docking_for_target(smiles, target_name, debug=False):
     """
     Executes a molecular docking simulation for a single compound against a specific target.
@@ -440,9 +440,13 @@ def initialize_docking_agents():
 
     protein_dir = 'protein_structure' # Protein's folder
     
-    if not os.path.exists(protein_dir):
-        st.error(f"❌ Protein directory not found: {protein_dir}")
-        return 0
+    if 'all_dockers' not in st.session_state:
+        st.session_state.all_dockers = {} # <- Ensure initialization if called directly
+        
+    #if not os.path.exists(protein_dir):
+    #    st.error(f"❌ Protein directory not found: {protein_dir}")
+    #    return 0
+    
     loaded_count = 0
     
     for target_key, config in DOCKING_TARGETS.items():
@@ -450,7 +454,7 @@ def initialize_docking_agents():
         
         if os.path.exists(pdbqt_path):
             try:
-                # Initialize SimpleDockingAgent with bonding site
+                # Store directly into the session state dictionary
                 st.session_state.all_dockers[target_key] = SimpleDockingAgent(pdbqt_path, config['binding_site'])
                 st.success(f"✅ Loaded docking target: {target_key}")
                 loaded_count += 1
@@ -2411,6 +2415,10 @@ with tab_dock:
     st.markdown("### 🎯 Molecular Docking")
     st.info("Simulate compound binding to protein targets")
 
+    # [INSERTION POINT A] - Initialize the session state variable
+    if 'all_dockers' not in st.session_state:
+        st.session_state.all_dockers = {}
+
     
     # Get key from state
     #groq_api_key = st.session_state.get('groq_api_key')
@@ -2503,8 +2511,8 @@ with tab_dock:
     if st.button("🎯 Run Docking & Analysis", key='run_dock', type="primary"):
         if not dock_smiles:
             st.error("Please provide SMILES first")
-        #elif not groq_api_key:
-        #    st.error("Please enter your Groq API Key in the sidebar to run the simulation and analysis.")
+        elif not groq_api_key:
+            st.error("Please enter your Groq API Key in the sidebar to run the simulation and analysis.")
         else:
             with st.spinner(f"Docking {len(dock_smiles)} compounds and generating report..."):
                 # 1. RUN SIMULATION (Placeholder results)
