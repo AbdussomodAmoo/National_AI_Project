@@ -869,6 +869,109 @@ def predict_retrosynthesis(model, tokenizer, device, product_smiles):
     
     predicted_smiles = tokenizer.decode(outputs[0], skip_special_tokens=True)
     return predicted_smiles
+
+# ============================================================================
+# ADMET CONSTANTS
+# ============================================================================
+
+ADMET_MODEL_DIR = "models/admet"
+
+# Define the models and their associated files
+ADMET_MODEL_CONFIG = {
+    # Key: Display Name | Value: File prefix for model and scaler
+    "Lipophilicity (logP)": "my_admet_models_logp",
+    "Aqueous Solubility": "my_admet_models_solubility",
+    "hERG Inhibition": "my_admet_models_herg",
+    "Ames Mutagenicity": "my_admet_models_ames",
+}
+
+# ============================================================================
+# ADMET PREDICTION FUNCTIONS
+# ============================================================================
+
+# Global variable to cache loaded models
+@st.cache_resource
+def load_admet_models():
+    """Load all trained ADMET models and their scalers."""
+    models = {}
+
+    if not os.path.exists(ADMET_MODEL_DIR):
+        st.error(f"❌ ADMET Directory not found: {ADMET_MODEL_DIR}")
+        return models
+
+    for display_name, file_prefix in ADMET_MODEL_CONFIG.items():
+        model_path = f"{ADMET_MODEL_DIR}/{file_prefix}_model.pkl"
+        scaler_path = f"{ADMET_MODEL_DIR}/{file_prefix}_scaler.pkl"
+
+        if os.path.exists(model_path):
+            try:
+                model = joblib.load(model_path)
+                scaler = joblib.load(scaler_path) if os.path.exists(scaler_path) else None
+
+                models[display_name] = {
+                    'model': model,
+                    'scaler': scaler,
+                    'type': 'regression' if 'logp' in file_prefix or 'solubility' in file_prefix else 'classification'
+                }
+                # st.write(f"✅ Loaded {display_name}") # Uncomment for debug
+            except Exception as e:
+                st.warning(f"⚠️ Failed to load {display_name} models: {e}")
+        else:
+            st.warning(f"⚠️ Model file not found for {display_name}: {model_path}")
+
+    return models
+
+# Reusing the featurize(smiles) function from your bioactivity section.
+# Since the featurization features match what the ADMET models were trained on!
+
+def predict_admet(smiles, admet_models_dict):
+    """Predict all available ADMET properties for a single compound."""
+    
+    # 1. Featurize the molecule (reuse your existing featurize function)
+    features = featurize(smiles) 
+    if features is None:
+        return {'SMILES': smiles, 'Status': '❌ Invalid SMILES'}
+
+    # Convert to DataFrame (must match column names used during training)
+    X = pd.DataFrame([features]).fillna(0)
+
+    results = {'SMILES': smiles, 'Status': '✅ Success'}
+    
+    for display_name, info in admet_models_dict.items():
+        model = info['model']
+        scaler = info['scaler']
+        model_type = info['type']
+        
+        # 2. Scale the features if a scaler is available
+        X_scaled = scaler.transform(X) if scaler else X.copy()
+        
+        # 3. Predict
+        try:
+            if model_type == 'classification':
+                # Assuming 1 = Active/Mutagenic/Inhibitor, 0 = Inactive/Non-mutagenic/Non-inhibitor
+                pred_class = model.predict(X_scaled)[0]
+                pred_label = 'Positive' if pred_class == 1 else 'Negative'
+                
+                if 'hERG' in display_name:
+                    results[display_name] = f"{pred_label} (Inhibitor)"
+                elif 'Ames' in display_name:
+                    results[display_name] = f"{pred_label} (Mutagenic)"
+                else:
+                    results[display_name] = pred_label
+
+            else:  # Regression (logP, Solubility)
+                prediction = model.predict(X_scaled)[0]
+                results[display_name] = f"{prediction:.2f}"
+                
+        except Exception as e:
+            results[display_name] = f"Error: {e}"
+
+    return results
+
+
+
+
+
 # ============================================================================
 # CORE CLASSES (LLM Client Setup)
 # ============================================================================
@@ -1482,14 +1585,15 @@ with st.sidebar:
 # Initialize active tab
 if 'active_tab' not in st.session_state:
     st.session_state.active_tab = 0
-tab_home, tab_literature, tab_3d, tab_plant, tab_bio, tab_dock, tab_synthesis = st.tabs([
+tab_home, tab_literature, tab_3d, tab_plant, tab_bio, tab_dock, tab_admet, tab_synthesis = st.tabs([
     "🏠 Home",
     "📚 Literature Mining",
     "🧊 3D Molecule Viewer",
     "🌿 Plant Recognition",
-    "Bioactivity Analysis",
-    "Molecular Docking",
-    "🧪 Retrosynthesis"
+    "🔬Bioactivity Analysis",
+    "🔗Molecular Docking",
+    "ADMET PREDICTION",
+    "🖥️🧪 Retrosynthesis"
 ])
 
 # ============================================================================
@@ -1747,6 +1851,12 @@ with tab_3d:
         else:
             mol = Chem.MolFromSmiles(smiles_input)
             if mol:
+                # --- START OF PIPELINE INTEGRATION ---
+                # 1. Save the successfully generated SMILES to session state for other tabs
+                st.session_state['smiles_from_generator'] = [smiles_input]
+                st.info(f"✨ **Pipeline Ready:** Compound '{mol_name if mol_name else smiles_input[:20]+'...'}' is now available in the Bioactivity, Docking, and ADMET tabs.")
+                # --- END OF PIPELINE INTEGRATION ---
+                
                 # 2D Structure
                 st.subheader("📐 2D Structure")
                 img = Draw.MolToImage(mol, size=(400, 400))
@@ -2595,8 +2705,120 @@ with tab_dock:
             file_name="docking_results.csv",
             mime="text/csv"
         )
+
 # ============================================================================
-# TAB 5: RETROSYNTHESIS
+# TAB 5: ADMET PREDICTION)
+# ============================================================================
+
+with tab_admet:
+    st.header("⚖️ ADMET Prediction")
+    st.info("Predict Absorption, Distribution, Metabolism, Excretion, and Toxicity properties")
+
+    # Load ADMET Models
+    admet_models = load_admet_models()
+
+    if not admet_models:
+        st.error("❌ No ADMET models found. Check 'models/admet/' directory.")
+        st.stop()
+
+    st.success(f"✅ Loaded {len(admet_models)} ADMET models: {', '.join(admet_models.keys())}")
+
+    col1, col2 = st.columns([2, 1])
+
+    # --- INPUT METHOD ---
+    with col1:
+        # Input method
+        input_method = st.radio(
+            "Input Method:",
+            ["Upload CSV", "Paste SMILES", "Search Database", "Use Generator Output"],
+            key='admet_input'
+        )
+
+        admet_smiles = []
+        df = st.session_state.get('database') # Assuming database is loaded into session state
+
+        if input_method == "Upload CSV":
+            admet_csv = st.file_uploader("Upload CSV with SMILES", type=['csv'], key='admet_csv')
+            if admet_csv:
+                admet_df_in = pd.read_csv(admet_csv)
+                smiles_col = st.selectbox("Select SMILES column:", admet_df_in.columns, key='admet_smiles_col')
+                admet_smiles = admet_df_in[smiles_col].dropna().tolist()[:50]
+                st.success(f"✅ Loaded {len(admet_smiles)} SMILES")
+
+        elif input_method == "Paste SMILES":
+            smiles_input = st.text_area(
+                "Paste SMILES (one per line):",
+                placeholder="CCO\nCC(=O)O",
+                key='admet_smiles_text'
+            )
+            if smiles_input:
+                admet_smiles = [s.strip() for s in smiles_input.split('\n') if s.strip()]
+                st.success(f"✅ {len(admet_smiles)} SMILES entered")
+
+        elif input_method == "Search Database":
+            # Reuse search logic from bioactivity
+            search_name = st.text_input("Enter plant or compound name:", key='admet_search')
+            # ... (implement search logic like in bioactivity tab)
+            # Placeholder:
+            if search_name and df is not None:
+                st.info("💡 Search logic needs to be implemented here, similar to the bioactivity tab.")
+                # For demonstration, use a placeholder list
+                admet_smiles = []
+
+        elif input_method == "Use Generator Output":
+            if 'smiles_from_generator' in st.session_state:
+                admet_smiles = st.session_state['smiles_from_generator']
+                st.info(f"✅ Using {len(admet_smiles)} SMILES from the Molecule Generator.")
+            else:
+                st.warning("No SMILES found in the Molecule Generator output.")
+
+
+    with col2:
+        # Show loaded models list
+        st.markdown("##### Models to be run:")
+        for name in admet_models.keys():
+            st.markdown(f"* {name}")
+
+    # --- RUN PREDICTION ---
+    if st.button("📈 Run ADMET Profiling", key='run_admet'):
+        if not admet_smiles:
+            st.error("Please provide SMILES first.")
+        else:
+            all_admet_results = []
+            with st.spinner(f"Predicting ADMET properties for {len(admet_smiles)} compounds..."):
+
+                for smiles in admet_smiles[:50]:
+                    result_row = predict_admet(smiles, admet_models)
+                    all_admet_results.append(result_row)
+
+            if all_admet_results:
+                admet_df = pd.DataFrame(all_admet_results)
+                st.session_state['admet_results_df'] = admet_df
+                st.rerun()
+
+    # --- DISPLAY RESULTS ---
+    if 'admet_results_df' in st.session_state and not st.session_state['admet_results_df'].empty:
+        results_df = st.session_state['admet_results_df']
+
+        st.subheader("Complete ADMET Profile")
+        st.dataframe(results_df, use_container_width=True)
+
+        st.markdown("---")
+        st.subheader("🤖 Expert Interpretation")
+        st.info("💡 Implement LLM analysis here, similar to Bioactivity/Docking.")
+
+        # Download button
+        csv = results_df.to_csv(index=False)
+        st.download_button(
+            "📥 Download ADMET Results",
+            data=csv,
+            file_name="admet_profile.csv",
+            mime="text/csv"
+                )
+
+
+# ============================================================================
+# TAB 6: RETROSYNTHESIS
 # ============================================================================
 
 with tab_synthesis:
