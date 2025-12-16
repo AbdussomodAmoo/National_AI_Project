@@ -2520,7 +2520,7 @@ with tab_dock:
                 for smiles in dock_smiles:
                     docking_result = perform_docking_for_target(smiles, protein, debug=False)
                     
-                    if docking_result['binding_energy] and docking_result['status'] == 'Success':
+                    if docking_result['binding_energy'] and docking_result['status'] == 'Success':
                         binding_energy = docking_result['binding_energy']
                         
                         # Classify affinity based on energy
