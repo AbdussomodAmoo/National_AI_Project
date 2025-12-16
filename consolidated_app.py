@@ -879,9 +879,9 @@ ADMET_MODEL_DIR = "models/admet"
 # Define the models and their associated files
 ADMET_MODEL_CONFIG = {
     # Key: Display Name | Value: File prefix for model and scaler
-    "Lipophilicity (logP)": "my_admet_models_logp",
+    "Lipophilicity (logP)": "my_admet_models_logp()",
     "Aqueous Solubility": "my_admet_models_solubility",
-    "hERG Inhibition": "my_admet_models_herg",
+    "hERG Inhibition": "my_admet_models_herg()",
     "Ames Mutagenicity": "my_admet_models_ames",
 }
 
