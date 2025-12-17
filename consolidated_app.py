@@ -893,7 +893,7 @@ import os
 
 DRIVE_FILE_CONFIG = {
     "my_admet_models_solubility": {
-        "file_id": "https://drive.google.com/file/d/1RXG05-offht2ksX5HrydBf3pHHtoyodM/view?usp=sharing", 
+        "file_id": "1RXG05-offht2ksX5HrydBf3pHHtoyodM/view?usp=sharing", 
         "local_filename": "my_admet_models_solubility.pkl"
     }
 }
