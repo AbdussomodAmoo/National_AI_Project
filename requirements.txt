@@ -21,7 +21,7 @@ google-cloud-vision
 transformers
 biopython
 ipython_genutils
-#reportlab
+reportlab
 #io
 sentencepiece==0.1.99
 protobuf==3.20.3
