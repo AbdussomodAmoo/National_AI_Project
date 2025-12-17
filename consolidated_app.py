@@ -1057,7 +1057,7 @@ class GroqClient:
     # Note: The Groq module is imported at the top of vision_app.py
     def __init__(self, api_key: str):
         self.client = Groq(api_key=api_key)
-        self.model = "mixtral-8x7b-32768"
+        self.model = "llama-3.1-70b-versatile"
 
     def generate_expert_analysis(self, compound_df: pd.DataFrame, target_disease: str) -> str:
         """Generates a summary of compounds for a target disease using LLM."""
