@@ -1068,34 +1068,35 @@ class GroqClient:
         """Generates a summary of compounds for a target disease using LLM."""
         if compound_df.empty:
             return "**Analysis Failed:** No compounds were provided for analysis."
+        # 1. Create a safe copy for the LLM to process
+            analysis_df = compound_df.copy()
+        
+            # 2. INTERNAL MAPPING: Link your model's names to the variable names used in the prompt
+            # Note: 'SMILES', 'Molecular Weight', and 'LogP' are your exact input names
+            mapping = {
+                'SMILES': 'SMILES',
+                'Molecular Weight': 'MW (Da)',
+                'LogP': 'LogP',
+                'Predicted Activity': 'Activity',
+                'Confidence': 'Conf.'
+            }
+            analysis_df.rename(columns=mapping, inplace=True)
+        
+            # 3. SELECTING COLUMNS: We select only the most relevant ones for a clear Markdown table
+            # This specifically avoids KeyError by checking if they exist first
+            display_cols = [c for c in ['SMILES', 'MW (Da)', 'LogP', 'Activity', 'Conf.'] if c in analysis_df.columns]
+            
+            # 4. Convert to Markdown for the LLM prompt
+            # Head(5) ensures we don't exceed API token limits
+            compound_info = analysis_df[display_cols].head(5).to_markdown(index=False)
 
-        # --- FIX: Standardize column names or select available ones ---
-        # We look for common variants of SMILES and Weight columns
-        column_mapping = {
-            'SMILES': 'canonical_smiles',
-            'Molecular Weight': 'molecular_weight',
-            'Compound_Name': 'Compound_Name'
-        }
-        
-        # Create a copy for analysis and rename what we find
-        analysis_df = compound_df.copy()
-        analysis_df.rename(columns=column_mapping, inplace=True)
-        
-        # Select only the columns that actually exist now
-        available_cols = [c for c in ['Compound_Name', 'canonical_smiles', 'molecular_weight'] if c in analysis_df.columns]
-        
-        # If Compound_Name is missing, use SMILES as the name
-        if 'Compound_Name' not in available_cols and 'canonical_smiles' in analysis_df.columns:
-            analysis_df['Compound_Name'] = analysis_df['canonical_smiles'].str[:15] + "..."
-            available_cols.append('Compound_Name')
-        compound_info = compound_df[['Compound_Name', 'canonical_smiles', 'molecular_weight']].head(5).to_markdown(index=False)
         
         system_prompt = f"""You are AfroMediBot, an expert cheminformatics and medicinal chemistry analyst. 
         Your task is to analyze the provided plant compounds and generate a concise, expert report 
         (in Markdown format) on their potential against {target_disease} based on their structures and 
-        physicochemical properties (which you must infer using RDKit principles like Lipinski's Rule of Five). 
+        physicochemical properties (which you must infer using RDKit principles like Lipinski's Rule of Five, verber rule, PAINS analyses). 
         
-        Focus on: 1. Drug-likeness assessment. 2. Potential mechanism of action based on structural motifs. 
+        Focus on: 1. Drug-likeness and toxicity assessment. 2. Potential mechanism of action based on structural motifs. 
         3. A simple recommendation (High/Medium/Low priority).
         """
         
@@ -2624,7 +2625,9 @@ with tab_bio:
         
         # Display report
         if 'llm_analysis_report' in st.session_state and st.session_state['llm_analysis_report']:
+            st.markdown("### 📥 Download Reports")
             st.markdown(st.session_state['llm_analysis_report'])
+            report_text = st.session_state['llm_analysis_report']
         
         # Download
         csv = results_df.to_csv(index=False)
@@ -2633,6 +2636,13 @@ with tab_bio:
             data=csv,
             file_name=f"bioactivity_{target_query.replace(' ', '_')}.csv",
             mime="text/csv"
+        )
+        #Download Expert Analysis
+        st.download_button(
+            label="📄 Download Expert Analysis (TXT)",
+            data=report_text,
+            file_name="bioactivity_expert_analysis.txt",
+            mime="text/plain"
         )
 # ========================================================================
 # MOLECULAR DOCKING TAB (MODIFIED for LLM Analysis)
@@ -2781,7 +2791,13 @@ with tab_dock:
                             'Status': '❌ Docking failed'
                         })
                 dock_df = pd.DataFrame(dock_results).sort_values('Binding Energy (kcal/mol)')
+                st.session_state['last_docking_results'] = dock_df # Save for download logic
 
+                # 2. RUN LLM EXPERT INTERPRETATION
+                client = GroqClient(groq_api_key)
+                client.model = "llama-3.3-70b-versatile"
+                report = client.generate_docking_analysis(dock_df, protein)
+                st.session_state['docking_analysis_report'] = report
                 if len(dock_df) > 0:
                     # Sort by binding energy (lower is better)
                     dock_df_sorted = dock_df[dock_df['Binding Energy (kcal/mol)'] != 'N/A'].copy()
@@ -2794,12 +2810,17 @@ with tab_dock:
                     st.success(f"✅ Docked {len(dock_results)} compounds")
                     
                     csv = dock_df.to_csv(index=False)
+                    dock_report = st.session_state['docking_analysis_report']
+                    combined_dock_data = dock_df.to_csv(index=False) + "\n\n" + "="*30 + "\nSTRUCTURAL ANALYSIS:\n" + "="*30 + "\n" + dock_report
+
+                    
                     st.download_button(
                         "📥 Download Docking Results",
-                        data=csv,
-                        file_name="docking_results.csv",
-                        mime="text/csv"
+                        data=combined_dock_data,
+                        file_name="molecular_docking_full_report.txt",
+                        mime="text/plain"
                     )
+                    
 
                 
                 # 2. RUN LLM INTERPRETATION
