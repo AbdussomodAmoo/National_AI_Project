@@ -1230,6 +1230,7 @@ class GroqClient:
             except Exception as e:
                 print(f"Groq API Error: {e}")
                 return f"**LLM Error:** Could not interpret docking results. Details: {e}"
+
     def generate_bioactivity_analysis(self, results_df: pd.DataFrame, target_query: str) -> str:
         """
         NEW METHOD: Generates expert analysis for bioactivity prediction results.
@@ -1286,6 +1287,30 @@ Be concise, scientific, and highlight the most promising molecule(s)."""
             print(f"Groq API Error: {e}")
             return f"**LLM Error:** Could not generate bioactivity analysis. Details: {e}"
 
+    def get_research_assistant_response(self, user_prompt: str, chat_history: list, context: str) -> str:
+        """Generates a conversational response for the Research Assistant Chatbot."""
+        
+        # 1. Start with your custom system prompt
+        messages = [{"role": "system", "content": RESEARCH_ASSISTANT_SYSTEM_PROMPT}]
+        
+        # 2. Add history for conversational memory
+        for msg in chat_history[-6:]: # Keep last 6 messages
+            messages.append({"role": msg["role"], "content": msg["content"]})
+        
+        # 3. Add current user query with context
+        full_user_content = f"CONTEXT FROM CURRENT SESSION:\n{context}\n\nUSER QUESTION: {user_prompt}"
+        messages.append({"role": "user", "content": full_user_content})
+    
+        try:
+            response = self.client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=messages,
+                temperature=0.4,
+                max_tokens=1500
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            return f"Chat Error: {e}"
 # ============================================================================
 # LITERATURE MINING FUNCTIONS
 # ============================================================================
@@ -2868,20 +2893,10 @@ with tab_dock:
                             'Binding Affinity': 'Failed',
                             'Status': '❌ Docking failed'
                         })
-                report = client.generate_docking_analysis(dock_df, protein)
-                st.markdown(report)
+                #report = client.generate_docking_analysis(dock_df, protein)
+                #st.markdown(report)
                 
-                # NEW INSERTION POINT: Professional PDF Export
-                st.markdown("---")
-                if st.button("📄 Generate Professional PDF", key='pdf_dock'):
-                    # results_df for docking is usually called dock_df
-                    pdf_data = export_results_to_pdf(dock_df, report, title=f"Molecular Docking Report: {protein}")
-                    st.download_button(
-                        label="📥 Download PDF Report",
-                        data=pdf_data,
-                        file_name=f"docking_report_{protein}.pdf",
-                        mime="application/pdf"
-                    )
+                
                 dock_df = pd.DataFrame(dock_results).sort_values('Binding Energy (kcal/mol)')
                 st.session_state['last_docking_results'] = dock_df # Save for download logic
 
@@ -2912,7 +2927,18 @@ with tab_dock:
                         file_name="molecular_docking_full_report.txt",
                         mime="text/plain"
                     )
-                    
+                    # NEW INSERTION POINT: Professional PDF Export
+                    st.markdown("---")
+                    if st.button("📄 Generate Professional PDF", key='pdf_dock'):
+                        # results_df for docking is usually called dock_df
+                        pdf_data = export_results_to_pdf(dock_df, report, title=f"Molecular Docking Report: {protein}")
+                        st.download_button(
+                            label="📥 Download PDF Report",
+                            data=pdf_data,
+                            file_name=f"docking_report_{protein}.pdf",
+                            mime="application/pdf"
+                        )
+                        
 
                 
                 # 2. RUN LLM INTERPRETATION
