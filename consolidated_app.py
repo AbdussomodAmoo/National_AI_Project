@@ -896,6 +896,7 @@ DRIVE_FILE_CONFIG = {
         "file_id": "https://drive.google.com/file/d/1RXG05-offht2ksX5HrydBf3pHHtoyodM/view?usp=sharing", 
         "local_filename": "my_admet_models_solubility.pkl"
     }
+}
 def check_and_download_model(model_prefix):
     """Checks local directory and downloads model from Drive if missing."""
     
