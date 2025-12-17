@@ -1311,6 +1311,17 @@ Be concise, scientific, and highlight the most promising molecule(s)."""
             return response.choices[0].message.content
         except Exception as e:
             return f"Chat Error: {e}"
+    
+    def _call_llm(self, system, user):
+            try:
+                res = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role":"system","content":system},{"role":"user","content":user}],
+                    temperature=0.2
+                )
+                return res.choices[0].message.content
+            except Exception as e:
+                return f"LLM Error: {e}"
 # ============================================================================
 # LITERATURE MINING FUNCTIONS
 # ============================================================================
@@ -1777,15 +1788,15 @@ with st.sidebar:
 # Initialize active tab
 if 'active_tab' not in st.session_state:
     st.session_state.active_tab = 0
-tab_home, tab_literature, tab_3d, tab_plant, tab_bio, tab_dock, tab_admet, tab_synthesis = st.tabs([
+tab_home, tab_literature, tab_3d, tab_plant, tab_bio, tab_dock, tab_admet, tab_synthesis, tab_chat = st.tabs([
     "🏠 Home",
     "📚 Literature Mining",
     "🧊 3D Molecule Viewer",
     "🌿 Plant Recognition",
-    "🔬Bioactivity Analysis",
-    "🔗Molecular Docking",
-    "ADMET PREDICTION",
-    "🖥️🧪 Retrosynthesis"
+    "🔬 Bioactivity Analysis",
+    "🔗 Molecular Docking",
+    "🖥️ ADMET PREDICTION",
+    "🧪 Retrosynthesis"
 ])
 
 # ============================================================================
@@ -2855,24 +2866,23 @@ with tab_dock:
         protein = available_options[protein_display]
     
         exhaustiveness = st.slider("Exhaustiveness:", 1, 10, 8)
-
     # --- Run Docking Simulation & Interpretation ---
     if st.button("🎯 Run Docking & Analysis", key='run_dock', type="primary"):
         if not dock_smiles:
             st.error("Please provide SMILES first")
         elif not groq_api_key:
-            st.error("Please enter your Groq API Key in the sidebar to run the simulation and analysis.")
+            st.error("Please enter your Groq API Key in the sidebar.")
         else:
             with st.spinner(f"Docking {len(dock_smiles)} compounds and generating report..."):
-                # 1. RUN SIMULATION (Placeholder results)
+                # 1. RUN SIMULATION
                 dock_results = []
                 for smiles in dock_smiles:
                     docking_result = perform_docking_for_target(smiles, protein, debug=False)
                     
-                    if docking_result['binding_energy'] and docking_result['status'] == 'Success':
+                    if docking_result.get('binding_energy') and docking_result.get('status') == 'Success':
                         binding_energy = docking_result['binding_energy']
                         
-                        # Classify affinity based on energy
+                        # Affinity Classification Logic
                         if binding_energy < -8.0:
                             affinity = 'Strong'
                         elif binding_energy < -6.0:
@@ -2893,84 +2903,61 @@ with tab_dock:
                             'Binding Affinity': 'Failed',
                             'Status': '❌ Docking failed'
                         })
-                #report = client.generate_docking_analysis(dock_df, protein)
-                #st.markdown(report)
                 
+                # 2. CREATE DATAFRAME
+                dock_df = pd.DataFrame(dock_results)
+                # Ensure we only sort numeric values to avoid errors
+                dock_df_valid = dock_df[dock_df['Binding Energy (kcal/mol)'] != 'N/A'].copy()
+                dock_df_valid['Binding Energy (kcal/mol)'] = pd.to_numeric(dock_df_valid['Binding Energy (kcal/mol)'])
+                dock_df_sorted = dock_df_valid.sort_values('Binding Energy (kcal/mol)')
+    
+                # 3. INITIALIZE CLIENT & GENERATE REPORT (Prevents NameError)
+                client = GroqClient(groq_api_key)
+                report = client.generate_docking_analysis(dock_df_sorted, protein)
                 
-                dock_df = pd.DataFrame(dock_results).sort_values('Binding Energy (kcal/mol)')
-                st.session_state['last_docking_results'] = dock_df # Save for download logic
-
-                
+                # Save results to session state for persistence
+                st.session_state['docking_results_df'] = dock_df_sorted
                 st.session_state['docking_analysis_report'] = report
-                if len(dock_df) > 0:
-                    # Sort by binding energy (lower is better)
-                    dock_df_sorted = dock_df[dock_df['Binding Energy (kcal/mol)'] != 'N/A'].copy()
-                    if len(dock_df_sorted) > 0:
-                        dock_df_sorted = dock_df_sorted.sort_values('Binding Energy (kcal/mol)')
-                        st.dataframe(dock_df_sorted, use_container_width=True)
-                    else:
-                        st.error("All docking attempts failed")
-                    
-                    st.success(f"✅ Docked {len(dock_results)} compounds")
-                    
-                    csv = dock_df.to_csv(index=False)
-                    dock_report = st.session_state['docking_analysis_report']
-                    combined_dock_data = dock_df.to_csv(index=False) + "\n\n" + "="*30 + "\nSTRUCTURAL ANALYSIS:\n" + "="*30 + "\n" + dock_report
-
-                    
+    
+                # 4. DISPLAY RESULTS
+                st.success(f"✅ Successfully docked {len(dock_results)} compounds")
+                st.dataframe(dock_df_sorted, use_container_width=True)
+                
+                st.markdown("---")
+                st.subheader("🤖 Expert Structural Analysis")
+                st.markdown(report)
+    
+                # 5. INTEGRATED DOWNLOAD BUTTONS
+                st.markdown("### 📥 Download Results")
+                col_dl1, col_dl2 = st.columns(2)
+                
+                with col_dl1:
+                    # Combined Text Report
+                    combined_text = (
+                        f"MOLECULAR DOCKING REPORT: {protein}\n"
+                        f"{'='*40}\n"
+                        f"{dock_df_sorted.to_csv(index=False)}\n\n"
+                        f"EXPERT INTERPRETATION:\n"
+                        f"{'-'*40}\n{report}"
+                    )
                     st.download_button(
-                        "📥 Download Docking Results",
-                        data=combined_dock_data,
-                        file_name="molecular_docking_full_report.txt",
+                        label="📄 Download Full Text Report",
+                        data=combined_text,
+                        file_name=f"docking_report_{protein}.txt",
                         mime="text/plain"
                     )
-                # 2. RUN LLM EXPERT INTERPRETATION
-                client = GroqClient(groq_api_key)
-                client.model = "llama-3.3-70b-versatile"
-                report = client.generate_docking_analysis(dock_df, protein)
-                # NEW INSERTION POINT: Professional PDF Export
-                st.markdown("---")
-                if st.button("📄 Generate Professional PDF", key='pdf_dock'):
-                    # results_df for docking is usually called dock_df
-                    pdf_data = export_results_to_pdf(dock_df, report, title=f"Molecular Docking Report: {protein}")
+    
+                with col_dl2:
+                    # Professional PDF
+                    pdf_bytes = export_results_to_pdf(dock_df_sorted, report, title=f"Docking Analysis: {protein}")
                     st.download_button(
-                        label="📥 Download PDF Report",
-                        data=pdf_data,
-                        file_name=f"docking_report_{protein}.pdf",
+                        label="📥 Download PDF Document",
+                        data=pdf_bytes,
+                        file_name=f"docking_analysis_{protein}.pdf",
                         mime="application/pdf"
                     )
-                        
 
-                
-                # 2. RUN LLM INTERPRETATION
-                client = GroqClient(groq_api_key)
-                report = client.generate_docking_analysis(dock_df, f"{protein} (Simulated Target)")
-                
-                st.session_state['docking_results_df'] = dock_df
-                st.session_state['docking_report'] = report
-                st.rerun() # Rerun to display results below
 
-    # --- Display Results ---
-    if 'docking_results_df' in st.session_state and not st.session_state['docking_results_df'].empty:
-        dock_df = st.session_state['docking_results_df']
-        
-        st.subheader("📊 Docking Results Table")
-        st.dataframe(dock_df, use_container_width=True)
-        
-        st.success(f"✅ Docked {len(dock_df)} compounds successfully.")
-        
-        st.markdown("---")
-        st.subheader("🤖 LLM Structural Analysis")
-        st.markdown(st.session_state['docking_report'])
-
-        # Download button
-        csv = dock_df.to_csv(index=False)
-        st.download_button(
-            "📥 Download Docking Results",
-            data=csv,
-            file_name="docking_results.csv",
-            mime="text/csv"
-        )
 
 # ============================================================================
 # TAB 5: ADMET PREDICTION)
