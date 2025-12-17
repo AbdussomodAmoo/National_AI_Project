@@ -935,62 +935,67 @@ def check_and_download_model(model_prefix):
 # ============================================================================
 # ADMET PREDICTION FUNCTIONS
 # ============================================================================
-
-# Global variable to cache loaded models
 @st.cache_resource
 def load_admet_models():
-    """Load all trained ADMET models and their scalers."""
+    """Load all trained ADMET models using the bioactivity pattern"""
     models = {}
+    missing_models = []
+    admet_dir = "models/admet"
 
-    for display_name, file_prefix in ADMET_MODEL_CONFIG.items():
-        
-        # 1. Model file path (e.g., my_admet_models_logp_model.pkl)
-        model_path = f"{ADMET_MODEL_DIR}/{file_prefix}_model.pkl" 
-        
-        # 2. Scaler file paths (check both naming conventions)
-        scaler_path_pattern1 = f"{ADMET_MODEL_DIR}/{file_prefix}_scaler.pkl"
-        scaler_path_pattern2 = f"{ADMET_MODEL_DIR}/{file_prefix}_scaler(1).pkl" # Matches your image
-
-        if os.path.exists(model_path):
-            try:
-                # --- FIX: ENSURE joblib IS IMPORTED ---
-                model = joblib.load(model_path)
-                
-                # Load Scaler (Robust Check)
-                scaler = None
-                if os.path.exists(scaler_path_pattern1):
-                    scaler = joblib.load(scaler_path_pattern1)
-                elif os.path.exists(scaler_path_pattern2):
-                    scaler = joblib.load(scaler_path_pattern2)
-            except Exception as e:
-                print(f"❌ ADMET Directory not found: {ADMET_MODEL_DIR}")
-        else:
-            st.warning(f"⚠️ Model file not found for {display_name}: Expected {model_path}")
-
-    #if not os.path.exists(ADMET_MODEL_DIR):
-    #    st.error(f"❌ ADMET Directory not found: {ADMET_MODEL_DIR}")
+    # 1. ✅ CHECK IF DIRECTORY EXISTS
+    if not os.path.exists(admet_dir):
+        st.error(f"❌ ADMET Directory not found: {admet_dir}")
+        st.info(f"💡 Current working directory: {os.getcwd()}")
         return models
 
-    for display_name, file_prefix in ADMET_MODEL_CONFIG.items():
-        model_path = f"{ADMET_MODEL_DIR}/{file_prefix}_model.pkl"
-        scaler_path = f"{ADMET_MODEL_DIR}/{file_prefix}_scaler.pkl"
+    # 2. ✅ DEFINE FILE MAPPING (Internal to function)
+    # Based on your image: my_admet_models_logp_model.pkl, etc.
+    model_files = {
+        "Lipophilicity (logP)": "my_admet_models_logp",
+        "Aqueous Solubility": "my_admet_models_solubility",
+        "hERG Inhibition": "my_admet_models_herg",
+        "Ames Mutagenicity": "my_admet_models_ames"
+    }
 
+    # 3. ✅ LOOP AND LOAD (Mirroring bioactivity pattern)
+    for display_name, file_prefix in model_files.items():
+        # Handle external download for large models (Solubility)
+        check_and_download_model(file_prefix)
+
+        # Path logic based on your uploaded image filenames
+        model_path = f"{admet_dir}/{file_prefix}_model.pkl"
+        # Try both scaler naming versions found in your image
+        scaler_path = f"{admet_dir}/{file_prefix}_scaler (1).pkl" 
+        if not os.path.exists(scaler_path):
+            scaler_path = f"{admet_dir}/{file_prefix}_scaler.pkl"
+
+        loaded = False
+        
         if os.path.exists(model_path):
             try:
-                model = joblib.load(model_path)
-                scaler = joblib.load(scaler_path) if os.path.exists(scaler_path) else None
-
+                st.write(f"🔄 Loading {display_name}...") # DEBUG
+                
+                # Determine type for prediction logic later
+                m_type = 'regression' if 'logp' in file_prefix or 'solubility' in file_prefix else 'classification'
+                
                 models[display_name] = {
-                    'model': model,
-                    'scaler': scaler,
-                    'type': 'regression' if 'logp' in file_prefix or 'solubility' in file_prefix else 'classification'
+                    'model': joblib.load(model_path),
+                    'scaler': joblib.load(scaler_path) if os.path.exists(scaler_path) else None,
+                    'type': m_type
                 }
-                # st.write(f"✅ Loaded {display_name}") # Uncomment for debug
+                loaded = True
+                st.write(f"✅ Loaded {display_name}") # DEBUG
             except Exception as e:
-                st.warning(f"⚠️ Failed to load {display_name} models: {e}")
-        else:
-            st.warning(f"⚠️ Model file not found for {display_name}: {model_path}")
+                st.error(f"❌ Failed to load {display_name}: {e}")
 
+        if not loaded:
+            missing_models.append(display_name)
+            st.warning(f"⚠️ No model found for {display_name} at {model_path}")
+
+    # Final summary status
+    if models:
+        st.success(f"✅ Successfully initialized {len(models)} ADMET models")
+    
     return models
 
 # Reusing the featurize(smiles) function from your bioactivity section.
