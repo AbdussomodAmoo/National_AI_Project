@@ -29,7 +29,7 @@ import subprocess
 
 
 import sklearn
-import st
+
 st.write(f"My Streamlit App's scikit-learn version is: {sklearn.__version__}")
 
 
