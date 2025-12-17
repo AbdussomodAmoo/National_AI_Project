@@ -1068,7 +1068,26 @@ class GroqClient:
         """Generates a summary of compounds for a target disease using LLM."""
         if compound_df.empty:
             return "**Analysis Failed:** No compounds were provided for analysis."
-            
+
+        # --- FIX: Standardize column names or select available ones ---
+        # We look for common variants of SMILES and Weight columns
+        rename_dict = {
+            'SMILES': 'canonical_smiles',
+            'Molecular Weight': 'molecular_weight',
+            'Compound_Name': 'Compound_Name'
+        }
+        
+        # Create a copy for analysis and rename what we find
+        analysis_df = compound_df.copy()
+        analysis_df.rename(columns=rename_dict, inplace=True)
+        
+        # Select only the columns that actually exist now
+        available_cols = [c for c in ['Compound_Name', 'canonical_smiles', 'molecular_weight'] if c in analysis_df.columns]
+        
+        # If Compound_Name is missing, use SMILES as the name
+        if 'Compound_Name' not in available_cols and 'canonical_smiles' in analysis_df.columns:
+            analysis_df['Compound_Name'] = analysis_df['canonical_smiles'].str[:15] + "..."
+            available_cols.append('Compound_Name')
         compound_info = compound_df[['Compound_Name', 'canonical_smiles', 'molecular_weight']].head(5).to_markdown(index=False)
         
         system_prompt = f"""You are AfroMediBot, an expert cheminformatics and medicinal chemistry analyst. 
