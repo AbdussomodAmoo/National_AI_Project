@@ -26,6 +26,14 @@ from rdkit.Chem import rdMolDescriptors, AllChem
 from meeko import MoleculePreparation, PDBQTWriterLegacy
 import tempfile
 import subprocess
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
+from io import BytesIO
+from reportlab.platypus import Image as RLImage
+
+
 
 
 import sklearn
@@ -190,6 +198,61 @@ def predict_druglikeness_properties(smiles):
         print(f"Prediction Error for {smiles}: {e}")
         return None
 
+# ============================================================================
+# PDF FUNCTIONS
+# ============================================================================
+def export_results_to_pdf(df, report_text, title="Drug Discovery Report"):
+    """Creates a professional PDF document containing results and expert analysis."""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+    story = []
+
+    # 1. Header
+    story.append(Paragraph(f"<b>{title}</b>", styles['Title']))
+    story.append(Spacer(1, 12))
+    
+    # 2. Add 2D Structure of the Top Candidate
+    if 'SMILES' in df.columns:
+        top_smi = df.iloc[0]['SMILES']
+        mol = Chem.MolFromSmiles(top_smi)
+        if mol:
+            # Create a temporary image in memory
+            img_buffer = BytesIO()
+            Draw.MolToImage(mol, size=(300, 300)).save(img_buffer, format="PNG")
+            img_buffer.seek(0)
+            story.append(RLImage(img_buffer, width=200, height=200))
+            story.append(Paragraph(f"<i>Top Candidate Structure: {top_smi[:20]}...</i>", getSampleStyleSheet()['Caption']))
+            
+    # 3. Expert Analysis Section
+    story.append(Paragraph("<b>Expert Analysis Interpretation</b>", styles['Heading2']))
+    # Clean markdown characters for basic PDF compatibility
+    clean_text = report_text.replace("#", "").replace("*", "")
+    story.append(Paragraph(clean_text, styles['Normal']))
+    story.append(Spacer(1, 20))
+
+    # 4. Tabular Results Section
+    story.append(Paragraph("<b>Detailed Screening Data</b>", styles['Heading2']))
+    # Prepare data for ReportLab Table (List of Lists)
+    table_data = [df.columns.tolist()] + df.head(15).values.tolist()
+    
+    # Simple table styling
+    t = Table(table_data)
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    story.append(t)
+
+    doc.build(story)
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    return pdf_bytes
+    
 # ============================================================================
 # BIOACTIVITY PREDICTION FUNCTIONS
 # ============================================================================
@@ -1068,36 +1131,36 @@ class GroqClient:
         """Generates a summary of compounds for a target disease using LLM."""
         if compound_df.empty:
             return "**Analysis Failed:** No compounds were provided for analysis."
-        # 1. Create a safe copy for the LLM to process
-            analysis_df = compound_df.copy()
         
-            # 2. INTERNAL MAPPING: Link your model's names to the variable names used in the prompt
-            # Note: 'SMILES', 'Molecular Weight', and 'LogP' are your exact input names
+        # 1. Initialize with a fallback to prevent UnboundLocalError
+        compound_info = "No compound data available."
+        try:
+            # 2. Map and select columns (Exact fix for your results_df)
+            analysis_df = compound_df.copy()
             mapping = {
                 'SMILES': 'SMILES',
-                'Molecular Weight': 'MW (Da)',
+                'Molecular Weight': 'MW',
                 'LogP': 'LogP',
                 'Predicted Activity': 'Activity',
                 'Confidence': 'Conf.'
             }
             analysis_df.rename(columns=mapping, inplace=True)
-        
-            # 3. SELECTING COLUMNS: We select only the most relevant ones for a clear Markdown table
-            # This specifically avoids KeyError by checking if they exist first
-            display_cols = [c for c in ['SMILES', 'MW (Da)', 'LogP', 'Activity', 'Conf.'] if c in analysis_df.columns]
             
-            # 4. Convert to Markdown for the LLM prompt
-            # Head(5) ensures we don't exceed API token limits
+            display_cols = [c for c in ['SMILES', 'MW', 'LogP', 'Activity', 'Conf.'] if c in analysis_df.columns]
+            
+            # 3. Create Markdown (This must succeed for the variable to be bound)
             compound_info = analysis_df[display_cols].head(5).to_markdown(index=False)
-
+        except Exception as e:
+            print(f"Data formatting error: {e}")
         
         system_prompt = f"""You are AfroMediBot, an expert cheminformatics and medicinal chemistry analyst. 
         Your task is to analyze the provided plant compounds and generate a concise, expert report 
         (in Markdown format) on their potential against {target_disease} based on their structures and 
-        physicochemical properties (which you must infer using RDKit principles like Lipinski's Rule of Five, verber rule, PAINS analyses). 
+        physicochemical properties which you must infer based on: 
         
-        Focus on: 1. Drug-likeness and toxicity assessment. 2. Potential mechanism of action based on structural motifs. 
-        3. A simple recommendation (High/Medium/Low priority).
+        1. Drug-likeness and toxicity assessment (Lipinski, Veber, PAINS). 
+        2. Potential mechanism of action based on structural motifs. 
+        3. A simple Priority recommendation (High/Medium/Low priority).
         """
         
         user_query = f"""
@@ -2619,6 +2682,19 @@ with tab_bio:
             client = GroqClient(groq_api_key)
             with st.spinner(f"Analyzing results for {target_query}..."):
                 report = client.generate_expert_analysis(results_df, target_query)
+                st.markdown(report)
+
+                # NEW INSERTION POINT: Professional PDF Export
+                st.markdown("---")
+                if st.button("📄 Generate Professional PDF", key='pdf_bio'):
+                    # Pass the specific results and report to the exporter
+                    pdf_data = export_results_to_pdf(results_df, report, title=f"Bioactivity Report: {target_query}")
+                    st.download_button(
+                        label="📥 Download PDF Report",
+                        data=pdf_data,
+                        file_name=f"bioactivity_report_{target_query.replace(' ', '_')}.pdf",
+                        mime="application/pdf"
+                    )
             
             st.session_state['llm_analysis_report'] = report
             st.rerun()
@@ -2790,6 +2866,20 @@ with tab_dock:
                             'Binding Affinity': 'Failed',
                             'Status': '❌ Docking failed'
                         })
+                report = client.generate_docking_analysis(dock_df, protein)
+                st.markdown(report)
+                
+                # NEW INSERTION POINT: Professional PDF Export
+                st.markdown("---")
+                if st.button("📄 Generate Professional PDF", key='pdf_dock'):
+                    # results_df for docking is usually called dock_df
+                    pdf_data = export_results_to_pdf(dock_df, report, title=f"Molecular Docking Report: {protein}")
+                    st.download_button(
+                        label="📥 Download PDF Report",
+                        data=pdf_data,
+                        file_name=f"docking_report_{protein}.pdf",
+                        mime="application/pdf"
+                    )
                 dock_df = pd.DataFrame(dock_results).sort_values('Binding Energy (kcal/mol)')
                 st.session_state['last_docking_results'] = dock_df # Save for download logic
 
