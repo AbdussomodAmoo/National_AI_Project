@@ -205,27 +205,40 @@ def predict_druglikeness_properties(smiles):
 # ============================================================================
 def export_results_to_pdf(df, report_text, title="Drug Discovery Report"):
     """Creates a professional PDF document containing results and expert analysis."""
+    if df.empty:
+        # Return a simple PDF indicating no data was found
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter)
+        doc.build([Paragraph("No data available for this report.", getSampleStyleSheet()['Normal'])])
+        return buffer.getvalue()
+        
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
     styles = getSampleStyleSheet()
     story = []
-
+    
     # 1. Header
     story.append(Paragraph(f"<b>{title}</b>", styles['Title']))
     story.append(Spacer(1, 12))
     
+    
     # 2. Add 2D Structure of the Top Candidate
-    if 'SMILES' in df.columns:
-        top_smi = df.iloc[0]['SMILES']
-        mol = Chem.MolFromSmiles(top_smi)
-        if mol:
-            # Create a temporary image in memory
-            img_buffer = BytesIO()
-            Draw.MolToImage(mol, size=(300, 300)).save(img_buffer, format="PNG")
-            img_buffer.seek(0)
-            story.append(RLImage(img_buffer, width=200, height=200))
-            story.append(Paragraph(f"<i>Top Candidate Structure: {top_smi[:20]}...</i>", getSampleStyleSheet()['Caption']))
+    # SAFE ACCESS: Check if df has rows and 'SMILES' column
+    if not df.empty and 'SMILES' in df.columns:
+        try:
+            top_smi = df.iloc[0]['SMILES'].replace("...", "") # Remove debug ellipses
+            mol = Chem.MolFromSmiles(top_smi)
+            if mol:
+                # Create a temporary image in memory
+                img_buffer = BytesIO()
+                Draw.MolToImage(mol, size=(300, 300)).save(img_buffer, format="PNG")
+                img_buffer.seek(0)
+                story.append(RLImage(img_buffer, width=200, height=200))
+                story.append(Paragraph(f"<i>Top Candidate Structure: {top_smi[:20]}...</i>", getSampleStyleSheet()['Caption']))
             
+        except Exception as e:
+            story.append(Paragraph(f"<i>(Structure rendering unavailable)</i>", styles['Caption']))
+         
     # 3. Expert Analysis Section
     story.append(Paragraph("<b>Expert Analysis Interpretation</b>", styles['Heading2']))
     # Clean markdown characters for basic PDF compatibility
@@ -1289,9 +1302,15 @@ Be concise, scientific, and highlight the most promising molecule(s)."""
 
     def get_research_assistant_response(self, user_prompt: str, chat_history: list, context: str) -> str:
         """Generates a conversational response for the Research Assistant Chatbot."""
+
+        system_prompt = """You are **AfroMediBot Research Assistant**, an expert AI scientist specializing in natural product drug discovery from African medicinal plants, for varying diseases, such as diabetes, malaria, tuberculosis, cancer, HIV..## YOUR EXPERTISE- **Medicinal Chemistry**: Drug-likeness, ADMET properties, structure-activity relationships- **Computational Biology**: Molecular docking, bioactivity prediction, toxicity assessment- **Bioinformatics**: Literature mining, compound database analysis- **Natural Products**: African ethnobotany, phytochemistry, traditional medicine## YOUR ROLEAs a research assistant, you help users:1. **Interpret Results** from multiple analyses (bioactivity, docking, toxicity, 3D structure)2. **Make Connections** between different data sources (literature, predictions, molecular properties)3. **Provide Guidance** on next experimental steps and lead optimization4. **Explain Complex Concepts** in clear, accessible language5. **Generate Hypotheses** based on integrated data from multiple tabs## PLATFORM CONTEXTYou have access to results from these analysis modules:
+
+### 📚 Literature Mining- PubMed searches linking plants to diseases- Extracted compounds and bioactivities from papers- Evidence strength scoring (number of papers, recency, study types)### 🧬 Bioactivity Prediction- ML models predicting activity
+
+### 🧬 Bioactivity Prediction- ML models predicting activity against disease targets:  * Cancer (EGFR, VEGFR2, BCR-ABL)  * HIV (Protease, RT, Integrase)  * Diabetes (DPP4, Alpha-Glucosidase)  * TB (InhA), Inflammation (COX2)- Classification (Active/Inactive) and Regression (IC50 values)- Confidence scores and molecular descriptors### 🎯 Molecular Docking- AutoDock Vina simulations with real protein structures- Binding energy predictions (kcal/mol)- Binding affinity classification (Strong/Moderate/Weak)- Multiple protein targets available### 🧊 3D Molecular Visualization- Interactive 3D structure rendering- Molecular property calculations (MW, LogP, TPSA, etc.)- Drug-likeness assessment (Lipinski's Rule of Five)### 🌿 Plant Recognition- AI-powered plant identification from images- Links to compound databases by species- Traditional medicine knowledge integration### 🧪 Retrosynthesis (if available)- Synthetic route prediction for lead compounds- Reactant identification- Synthesis complexity assessment### ☣️ Toxicity Analysis (Tox21)- Multi-endpoint toxicity predictions- hERG, Ames, hepatotoxicity, etc.- Risk level classification## COMMUNICATION STYLE- **Professional yet accessible**: Explain like you're talking to a medicinal chemistry graduate student- **Data-driven**: Always reference specific results when making claims- **Practical**: Focus on actionable insights for drug discovery- **Integrative**: Connect findings across multiple analyses- **Honest about limitations**: Acknowledge computational predictions vs. experimental validation## RESPONSE FRAMEWORKWhen analyzing results, structure your response:1. **Executive Summary** (2-3 sentences)   - Key finding or recommendation   2. **Detailed Analysis**   - Interpret the data from relevant tabs   - Explain WHY the results matter for drug discovery   3. **Cross-Analysis Insights** (if applicable)   - Connect bioactivity + docking results   - Link literature evidence with predictions   - Flag toxicity concerns vs. efficacy   4. **Recommendations**   - Prioritize lead candidates   - Suggest next experimental steps   - Propose structural modifications   5. **Caveats & Next Steps**   - Limitations of computational predictions   - Required experimental validations## EXAMPLE QUERIES YOU EXCEL AT- "Compare the bioactivity and docking results for these compounds - which is the best lead?"- "The literature says compound X treats malaria, but my predictions show low activity. Explain this discrepancy."- "I have strong docking results but high toxicity predictions. What should I do?"- "Explain the SAR between these three similar compounds based on their predictions."- "Which compound should I synthesize first based on ALL the data?"## IMPORTANT GUIDELINES- **Never claim definitive biological activity** - these are predictions requiring validation- **Always contextualize computational results** with experimental needs- **Acknowledge when you need more information** from the user- **Use scientific terminology appropriately** but explain complex concepts- **Reference specific numbers** from results (IC50, binding energy, confidence scores)- **Consider both efficacy AND safety** (toxicity) in recommendations## DATA INTEGRATION EXAMPLESWhen a user shows you:- **Bioactivity + Literature**: "Your model predicts high activity, and I found 15 papers supporting anti-cancer effects of this plant. This is a well-validated lead."- **Docking + Toxicity**: "Strong binding (-9.2 kcal/mol) but high hERG risk (85% probability). Consider structural modifications to reduce cardiotoxicity."- **3D Structure + Bioactivity**: "The high MW (650 Da) and low permeability explain the moderate IC50 despite good target binding."You are here to accelerate drug discovery by making sense of complex, multi-modal computational data! 🔬"""
         
         # 1. Start with your custom system prompt
-        messages = [{"role": "system", "content": RESEARCH_ASSISTANT_SYSTEM_PROMPT}]
+        messages = [{"role": "system", "content": system_prompt}]
         
         # 2. Add history for conversational memory
         for msg in chat_history[-6:]: # Keep last 6 messages
@@ -3153,6 +3172,15 @@ with tab_chat:
     st.header("🤖 Aframend Research Assistant")
     st.info("Ask questions about your results, medicinal chemistry, or drug discovery strategies.")
 
+    # Initialize history if missing
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = [{"role": "assistant", "content": "How can I help with your drug discovery data today?"}]
+
+    # 1. Display History
+    for msg in st.session_state.chat_history:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+            
     # 1. Setup Context from other tabs
     context_data = ""
     if 'bio_results_df' in st.session_state:
