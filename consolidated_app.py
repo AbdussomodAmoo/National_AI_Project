@@ -885,6 +885,53 @@ ADMET_MODEL_CONFIG = {
     "Ames Mutagenicity": "my_admet_models_ames",
 }
 
+
+
+########### DOWNLOADING LARGE MODELS FROM DRIVE #############################
+import gdown
+import os
+
+DRIVE_FILE_CONFIG = {
+    "my_admet_models_solubility": {
+        "file_id": "https://drive.google.com/file/d/1RXG05-offht2ksX5HrydBf3pHHtoyodM/view?usp=sharing
+", 
+        "local_filename": "my_admet_models_solubility.pkl"
+    }
+def check_and_download_model(model_prefix):
+    """Checks local directory and downloads model from Drive if missing."""
+    
+    # 1. Check if this model prefix is configured for external download
+    if model_prefix not in DRIVE_FILE_CONFIG:
+        return True  # Not a configured external model, assume it's local.
+
+    config = DRIVE_FILE_CONFIG[model_prefix]
+    local_path = os.path.join(ADMET_MODEL_DIR, config['local_filename'])
+    
+    # 2. Check if the file already exists locally
+    if os.path.exists(local_path):
+        st.info(f"💾 Found {config['local_filename']} locally.")
+        return True
+
+    # 3. Download the file
+    st.warning(f"⬇️ Downloading large model: {config['local_filename']}...")
+    try:
+        # Ensure the target directory exists
+        os.makedirs(ADMET_MODEL_DIR, exist_ok=True)
+        
+        # Use gdown to download (needs public link or permissions)
+        gdown.download(
+            id=config['file_id'], 
+            output=local_path, 
+            quiet=False, 
+            fuzzy=True
+        )
+        st.success(f"✅ Download complete: {config['local_filename']}")
+        return True
+    
+    except Exception as e:
+        st.error(f"❌ Failed to download model {config['local_filename']} from Drive: {e}")
+        st.error("Please ensure the Google Drive ID is correct and the file is shared publicly.")
+        return False
 # ============================================================================
 # ADMET PREDICTION FUNCTIONS
 # ============================================================================
@@ -895,12 +942,21 @@ def load_admet_models():
     """Load all trained ADMET models and their scalers."""
     models = {}
 
+    for display_name, file_prefix in ADMET_MODEL_CONFIG.items():
+        
+        # --- NEW INTEGRATION STEP ---
+        # 1. Check/Download the model if configured for external drive
+        if not check_and_download_model(file_prefix):
+            st.warning(f"⚠️ Skipping {display_name} due to download failure.")
+            continue # Skip to the next model
+    
+
     if not os.path.exists(ADMET_MODEL_DIR):
         st.error(f"❌ ADMET Directory not found: {ADMET_MODEL_DIR}")
         return models
 
     for display_name, file_prefix in ADMET_MODEL_CONFIG.items():
-        model_path = f"{ADMET_MODEL_DIR}/{file_prefix}_model.pkl"
+        model_path = f"{ADMET_MODEL_DIR}/{file_prefix}.pkl"
         scaler_path = f"{ADMET_MODEL_DIR}/{file_prefix}_scaler.pkl"
 
         if os.path.exists(model_path):
@@ -2358,7 +2414,7 @@ with tab_bio:
         # Input method
         input_method = st.radio(
             "Input Method:",
-            ["Upload CSV", "Paste SMILES", "Search by Plant/Compound Name"],
+            ["Upload CSV", "Paste SMILES", "Search by Plant/Compound Name", "Use Generator Output"],
             key='bio_input'
         )
         
@@ -2382,6 +2438,15 @@ with tab_bio:
                 bio_smiles = [s.strip() for s in smiles_input.split('\n') if s.strip()]
                 st.success(f"✅ {len(bio_smiles)} SMILES entered")
         
+        elif input_method == "Use Generator Output":
+            if 'smiles_from_generator' in st.session_state and st.session_state['smiles_from_generator']:
+                # The generator saves a list of SMILES (even if only one)
+                bio_smiles = st.session_state['smiles_from_generator']
+                st.success(f"✅ Using {len(bio_smiles)} SMILES from the Molecule Generator.")
+            else:
+                st.warning("No SMILES found in the Molecule Generator output. Generate a structure first.")
+                bio_smiles = []
+                
         else:  # Search by name
             search_name = st.text_input("Enter plant or compound name:", key='bio_search')
             
@@ -2548,7 +2613,7 @@ with tab_dock:
     with col1:
         dock_input = st.radio(
             "Input Method:",
-            ["Upload CSV", "Paste SMILES", "Search Database"],
+            ["Upload CSV", "Paste SMILES", "Search Database", "Use Generator Output"],
             key='dock_input'
         )
         
@@ -2567,6 +2632,16 @@ with tab_dock:
             if smiles_text:
                 dock_smiles = [s.strip() for s in smiles_text.split('\n') if s.strip()]
                 st.success(f"✅ {len(dock_smiles)} SMILES")
+        # USE GENERATOR OUTPUT
+        elif dock_input == "Use Generator Output":
+            if 'smiles_from_generator' in st.session_state and st.session_state['smiles_from_generator']:
+                # The generator saves a list of SMILES (even if only one)
+                dock_smiles = st.session_state['smiles_from_generator']
+                st.success(f"✅ Using {len(dock_smiles)} SMILES from the Molecule Generator.")
+            else:
+                st.warning("No SMILES found in the Molecule Generator output. Generate a structure first.")
+                dock_smiles = []
+                
         else: # Search Database
             search = st.text_input("Search Plant or Compound Name:", key='dock_search')
             if search and df is not None and not df.empty:
