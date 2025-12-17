@@ -2900,10 +2900,7 @@ with tab_dock:
                 dock_df = pd.DataFrame(dock_results).sort_values('Binding Energy (kcal/mol)')
                 st.session_state['last_docking_results'] = dock_df # Save for download logic
 
-                # 2. RUN LLM EXPERT INTERPRETATION
-                client = GroqClient(groq_api_key)
-                client.model = "llama-3.3-70b-versatile"
-                report = client.generate_docking_analysis(dock_df, protein)
+                
                 st.session_state['docking_analysis_report'] = report
                 if len(dock_df) > 0:
                     # Sort by binding energy (lower is better)
@@ -2927,17 +2924,21 @@ with tab_dock:
                         file_name="molecular_docking_full_report.txt",
                         mime="text/plain"
                     )
-                    # NEW INSERTION POINT: Professional PDF Export
-                    st.markdown("---")
-                    if st.button("📄 Generate Professional PDF", key='pdf_dock'):
-                        # results_df for docking is usually called dock_df
-                        pdf_data = export_results_to_pdf(dock_df, report, title=f"Molecular Docking Report: {protein}")
-                        st.download_button(
-                            label="📥 Download PDF Report",
-                            data=pdf_data,
-                            file_name=f"docking_report_{protein}.pdf",
-                            mime="application/pdf"
-                        )
+                # 2. RUN LLM EXPERT INTERPRETATION
+                client = GroqClient(groq_api_key)
+                client.model = "llama-3.3-70b-versatile"
+                report = client.generate_docking_analysis(dock_df, protein)
+                # NEW INSERTION POINT: Professional PDF Export
+                st.markdown("---")
+                if st.button("📄 Generate Professional PDF", key='pdf_dock'):
+                    # results_df for docking is usually called dock_df
+                    pdf_data = export_results_to_pdf(dock_df, report, title=f"Molecular Docking Report: {protein}")
+                    st.download_button(
+                        label="📥 Download PDF Report",
+                        data=pdf_data,
+                        file_name=f"docking_report_{protein}.pdf",
+                        mime="application/pdf"
+                    )
                         
 
                 
