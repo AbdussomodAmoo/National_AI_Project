@@ -52,7 +52,9 @@ if 'mapped_plant' not in st.session_state:
     st.session_state.mapped_plant = None
 if 'plant_compounds' not in st.session_state:
     st.session_state.plant_compounds = None
-
+if 'chat_messages' not in st.session_state:
+    st.session_state.chat_messages = []
+    
 # ============================================================================
 # SESSION STATE INITIALIZATION (Add new variables here)
 # ============================================================================
@@ -3128,6 +3130,55 @@ with tab_synthesis:
                 else:
                     st.warning("Please enter a valid SMILES string.")
 
+
+# ============================================================================
+# TAB 8: RESEARCH ASSISTANT CHATBOT
+# ============================================================================
+with tab_chat:
+    st.header("🤖 Aframend Research Assistant")
+    st.info("Ask questions about your results, medicinal chemistry, or drug discovery strategies.")
+
+    # 1. Setup Context from other tabs
+    context_data = ""
+    if 'bio_results_df' in st.session_state:
+        context_data += f"\nBioactivity Data: {st.session_state['bio_results_df'].head(3).to_markdown()}"
+    if 'docking_results_df' in st.session_state:
+        context_data += f"\nDocking Data: {st.session_state['docking_results_df'].head(3).to_markdown()}"
+
+    # 2. Display Chat History
+    for message in st.session_state.chat_messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # 3. Chat Input
+    if prompt := st.chat_input("Ask a medicinal chemistry question..."):
+        # Display user message
+        st.session_state.chat_messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # Generate Assistant Response
+        if not groq_api_key:
+            st.error("Please configure Groq API Key in the sidebar.")
+        else:
+            client = GroqClient(groq_api_key)
+            # Combine System Prompt + Context + Current User Query
+            full_prompt = f"{RESEARCH_ASSISTANT_SYSTEM_PROMPT}\n\nCURRENT CONTEXT:\n{context_data}\n\nUSER QUESTION: {prompt}"
+            
+            with st.spinner("Thinking..."):
+                try:
+                    response = client.client.chat.completions.create(
+                        model="llama-3.3-70b-versatile",
+                        messages=[{"role": "user", "content": full_prompt}],
+                        temperature=0.4
+                    ).choices[0].message.content
+                    
+                    # Display response
+                    with st.chat_message("assistant"):
+                        st.markdown(response)
+                    st.session_state.chat_messages.append({"role": "assistant", "content": response})
+                except Exception as e:
+                    st.error(f"Chat Error: {e}")
 
 # ============================================================================
 # FOOTER
