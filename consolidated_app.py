@@ -36,11 +36,6 @@ from reportlab.platypus import Image as RLImage
 
 
 
-import sklearn
-
-st.write(f"My Streamlit App's scikit-learn version is: {sklearn.__version__}")
-
-
 VISION_AVAILABLE = True
 LITERATURE_AVAILABLE = True
 RDKIT_AVAILABLE = True
@@ -164,6 +159,20 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+# ============================================================================
+# CONFIGURATION & PROMPTS
+# ============================================================================
+system_prompt = f"""You are AfroMediBot, an expert cheminformatics and medicinal chemistry analyst. 
+Your task is to analyze the provided plant compounds and generate a concise, expert report 
+(in Markdown format) on their potential against {target_disease} based on their structures and 
+physicochemical properties which you must infer based on: 
+
+1. Drug-likeness and toxicity assessment (Lipinski, Veber, PAINS). 
+2. Potential mechanism of action based on structural motifs. 
+3. A simple Priority recommendation (High/Medium/Low priority).
+"""
+
 # ----------------------------------------------------------------------------
 # STANDALONE PREDICTION FUNCTION (Extracts logic from old Chatbot.predictor)
 # ----------------------------------------------------------------------------
@@ -1167,16 +1176,6 @@ class GroqClient:
             compound_info = analysis_df[display_cols].head(5).to_markdown(index=False)
         except Exception as e:
             print(f"Data formatting error: {e}")
-        
-        system_prompt = f"""You are AfroMediBot, an expert cheminformatics and medicinal chemistry analyst. 
-        Your task is to analyze the provided plant compounds and generate a concise, expert report 
-        (in Markdown format) on their potential against {target_disease} based on their structures and 
-        physicochemical properties which you must infer based on: 
-        
-        1. Drug-likeness and toxicity assessment (Lipinski, Veber, PAINS). 
-        2. Potential mechanism of action based on structural motifs. 
-        3. A simple Priority recommendation (High/Medium/Low priority).
-        """
         
         user_query = f"""
         Generate an expert analysis report for the following compounds identified as relevant to '{target_disease}'.
@@ -2825,19 +2824,33 @@ with tab_dock:
         # --- DOCKING INPUT LOGIC ---
         if dock_input == "Upload CSV":
             dock_csv = st.file_uploader("Upload CSV", type=['csv'], key='dock_csv')
-            if dock_csv:
+            if dock_csv is not None:
                 try:
-                    temp_df = pd.read_csv(dock_csv)
-                    # Automatically find the SMILES column regardless of case
-                    smiles_col = next((c for c in temp_df.columns if 'smiles' in c.lower()), None)
+                    # 1. Reset file pointer to the beginning to prevent EmptyDataError
+                    dock_csv.seek(0) 
                     
-                    if smiles_col:
-                        dock_smiles = temp_df[smiles_col].dropna().astype(str).tolist()[:50]
-                        st.success(f"✅ Loaded {len(dock_smiles)} SMILES from '{smiles_col}' column")
+                    # 2. Read the dataframe
+                    temp_df = pd.read_csv(dock_csv)
+                    
+                    if temp_df.empty:
+                        st.warning("⚠️ The uploaded CSV file is empty.")
                     else:
-                        st.error("❌ No column containing 'SMILES' found in CSV. Please rename your column.")
+                        # 3. Flexible column variations (Smart Detection)
+                        smiles_variations = ['canonical_smiles', 'SMILES', 'SMILE', 'smiles', 'smile', 'Smiles']
+                        smiles_col = next((col for col in temp_df.columns if col in smiles_variations), None)
+                        
+                        if smiles_col:
+                            # Clean and load SMILES
+                            dock_smiles = temp_df[smiles_col].dropna().astype(str).tolist()[:20]
+                            st.success(f"✅ Loaded {len(dock_smiles)} compounds from column: '{smiles_col}'")
+                        else:
+                            st.error(f"❌ Could not find a SMILES column. Found: {list(temp_df.columns)}")
+                            st.info("💡 Please ensure your column is named 'canonical_smiles' or 'SMILES'.")
+                except pd.errors.EmptyDataError:
+                    st.error("❌ The file contains no data.")
                 except Exception as e:
-                    st.error(f"Error reading CSV: {e}")
+                    st.error(f"❌ Error processing CSV: {e}")
+                
                 
                 dock_df = pd.read_csv(dock_csv)
                 col = st.selectbox("SMILES column:", dock_df.columns, key='dock_col')
@@ -3164,61 +3177,48 @@ with tab_chat:
     st.info("Ask questions about your results, medicinal chemistry, or drug discovery strategies.")
 
     # Initialize history if missing
-    if 'chat_history' not in st.session_state:
-        st.session_state.chat_history = [{"role": "assistant", "content": "How can I help with your drug discovery data today?"}]
+    if 'messages' not in st.session_state:
+        st.session_state.messages = [{"role": "assistant", "content": "Welcome! I am your Research Assistant. How can I help with your drug discovery data today?"}]
 
     # 1. Display History
-    for msg in st.session_state.chat_history:
-        with st.chat_message(msg["role"]):
+    for message in st.session_state.chat_history:
+        with st.chat_message(message["role"]):
             st.markdown(msg["content"])
 
     # 3. Handle User Input
-    if prompt := st.chat_input("Ask about bioactivity, docking, or structural alerts..."):
-        # Add user message to history
+    # 3. Handle new user input
+    if prompt := st.chat_input("Ask a question about your lead compounds..."):
+        # Display user message
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
-    
-    # 1. Setup Context from other tabs
-    context_data = ""
-    if 'bio_results_df' in st.session_state:
-        context_data += f"\nBioactivity Data: {st.session_state['bio_results_df'].head(3).to_markdown()}"
-    if 'docking_results_df' in st.session_state:
-        context_data += f"\nDocking Data: {st.session_state['docking_results_df'].head(3).to_markdown()}"
-
-    # 2. Display Chat History
-    for message in st.session_state.chat_messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    # 3. Chat Input
-    if prompt := st.chat_input("Ask a medicinal chemistry question..."):
-        # Display user message
-        st.session_state.chat_messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
-        # Generate Assistant Response
-        if not groq_api_key:
-            st.error("Please configure Groq API Key in the sidebar.")
+        # 4. Generate AI Response
+        if not st.session_state.get('groq_api_key'):
+            st.warning("⚠️ Please provide a Groq API Key in the sidebar.")
         else:
-            client = GroqClient(groq_api_key)
-            # Combine System Prompt + Context + Current User Query
-            full_prompt = f"{system_prompt}\n\nCURRENT CONTEXT:\n{context_data}\n\nUSER QUESTION: {prompt}"
+            # Build context from current session results
+            session_context = "--- CURRENT PROJECT DATA ---\n"
+            if 'docking_results_df' in st.session_state:
+                session_context += f"Docking Results: {st.session_state.docking_results_df.head(3).to_markdown()}\n"
+            if 'bio_results_df' in st.session_state:
+                session_context += f"Bioactivity Results: {st.session_state.bio_results_df.head(3).to_markdown()}\n"
+
+            client = GroqClient(st.session_state['groq_api_key'])
             
-            with st.spinner("Thinking..."):
+            with st.spinner("Consulting knowledge base..."):
                 try:
-                    response = client.client.chat.completions.create(
-                        model="llama-3.3-70b-versatile",
-                        messages=[{"role": "user", "content": full_prompt}],
-                        temperature=0.4
-                    ).choices[0].message.content
+                    # Use the specific prompt provided by the user
+                    response = client.get_research_assistant_response(
+                        user_prompt=prompt,
+                        chat_history=st.session_state.messages,
+                        context=session_context
+                    )
                     
-                    # Display response
+                    # Display and save response
                     with st.chat_message("assistant"):
                         st.markdown(response)
-                    st.session_state.chat_messages.append({"role": "assistant", "content": response})
+                    st.session_state.messages.append({"role": "assistant", "content": response})
                 except Exception as e:
                     st.error(f"Chat Error: {e}")
 
