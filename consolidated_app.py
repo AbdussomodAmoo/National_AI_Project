@@ -409,13 +409,13 @@ def load_bioactivity_models():
         # Try classification
         if os.path.exists(class_path):
             try:
-                st.write(f"🔄 Loading {class_path}...")  # ✅ DEBUG
+                #st.write(f"🔄 Loading {class_path}...")  # ✅ DEBUG
                 models[display_name] = {
                     'model': joblib.load(class_path),
                     'type': 'classification'
                 }
                 loaded = True
-                st.write(f"✅ Loaded {display_name} (classification)")  # ✅ DEBUG
+                #st.write(f"✅ Loaded {display_name} (classification)")  # ✅ DEBUG
             except Exception as e:
                 error_msg = str(e) # Save error
                 st.error(f"❌ Failed to load {class_path}: {e}")
@@ -423,13 +423,13 @@ def load_bioactivity_models():
         # Try regression if classification failed
         if not loaded and os.path.exists(reg_path):
             try:
-                st.write(f"🔄 Loading {reg_path}...")  # ✅ DEBUG
+                #st.write(f"🔄 Loading {reg_path}...")  # ✅ DEBUG
                 models[display_name] = {
                     'model': joblib.load(reg_path),
                     'type': 'regression'
                 }
                 loaded = True
-                st.write(f"✅ Loaded {display_name} (regression)")  # ✅ DEBUG
+                #st.write(f"✅ Loaded {display_name} (regression)")  # ✅ DEBUG
             except Exception as e:
                 error_msg = str(e)  # ✅ Save error
                 st.warning(f"❌ Failed to load {reg_path}: {e}")
@@ -3268,7 +3268,7 @@ with tab_chat:
     # 1. Display History
     for message in st.session_state.chat_history:
         with st.chat_message(message["role"]):
-            st.markdown(msg["content"])
+            st.markdown(message["content"])
 
     # 3. Handle User Input
     # 3. Handle new user input
