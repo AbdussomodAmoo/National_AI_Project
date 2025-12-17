@@ -2937,7 +2937,7 @@ with tab_dock:
                     st.error(f"❌ Error processing CSV: {e}")
                 
                 
-                dock_df = pd.read_csv(dock_csv)
+                #dock_df = pd.read_csv(dock_csv)
                 col = st.selectbox("SMILES column:", dock_df.columns, key='dock_col')
                 dock_smiles = dock_df[col].dropna().tolist()[:10]
                 st.success(f"✅ Loaded {len(dock_smiles)} SMILES")
