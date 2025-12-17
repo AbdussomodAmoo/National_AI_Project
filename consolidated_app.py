@@ -3005,68 +3005,104 @@ with tab_dock:
         protein = available_options[protein_display]
     
         exhaustiveness = st.slider("Exhaustiveness:", 1, 10, 8)
-    # --- Run Docking Simulation & Interpretation ---
-    if st.button("🎯 Run Docking & Analysis", key='run_dock', type="primary"):
+    # --- EXECUTION SECTION ---
+    if st.button("🎯 Run Docking & Analysis", key='run_dock_btn', type="primary"):
+        # 1. Validation Checks
         if not dock_smiles:
-            st.error("Please provide SMILES first")
-        elif not groq_api_key:
+            st.error("Please provide SMILES first (Upload CSV, Paste, or Use Generator).")
+        elif not protein:
+            st.error("No target protein selected.")
+        elif not st.session_state.get('groq_api_key'):
             st.error("Please enter your Groq API Key in the sidebar.")
         else:
-            with st.spinner(f"Docking {len(dock_smiles)} compounds and generating report..."):
-                # 1. RUN SIMULATION
+            with st.spinner(f"Docking {len(dock_smiles)} compounds against {protein}..."):
                 dock_results = []
+                
+                # 2. Run Simulations
                 for smiles in dock_smiles:
-                    docking_result = perform_docking_for_target(smiles, protein, debug=False)
+                    # Run the docking function
+                    result = perform_docking_for_target(smiles, protein, debug=False)
                     
-                    if docking_result.get('binding_energy') and docking_result.get('status') == 'Success':
-                        binding_energy = docking_result['binding_energy']
-                        
-                        # Affinity Classification Logic
-                        if binding_energy < -8.0:
+                    # Check for valid energy returned
+                    if result.get('binding_energy') is not None and result.get('status') == 'Success':
+                        energy = result['binding_energy']
+                        # Classify affinity
+                        if energy < -8.0:
                             affinity = 'Strong'
-                        elif binding_energy < -6.0:
+                        elif energy < -6.0:
                             affinity = 'Moderate'
                         else:
                             affinity = 'Weak'
                         
                         dock_results.append({
-                            'SMILES': smiles[:40] + '...',
-                            'Binding Energy (kcal/mol)': binding_energy,
+                            'SMILES': smiles,
+                            'Binding Energy (kcal/mol)': energy,
                             'Binding Affinity': affinity,
                             'Status': '✅ Success'
                         })
                     else:
+                        # Handle failures
                         dock_results.append({
-                            'SMILES': smiles[:40] + '...',
+                            'SMILES': smiles,
                             'Binding Energy (kcal/mol)': 'N/A',
                             'Binding Affinity': 'Failed',
-                            'Status': '❌ Docking failed'
+                            'Status': '❌ Failed'
                         })
-                                    
+
+                # 3. Process Results (CRITICAL FIX: Create DataFrame from list, DO NOT read CSV)
                 if dock_results:
                     dock_df = pd.DataFrame(dock_results)
-                    # Filter only successful runs
-                    dock_df_valid = dock_df[dock_df['Binding Energy (kcal/mol)'] != 'N/A'].copy()
                     
-                    if not dock_df_valid.empty:
-                        # Sort and run LLM
-                        dock_df_sorted = dock_df_valid.sort_values('Binding Energy (kcal/mol)')
-                        client = GroqClient(groq_api_key)
+                    # Filter for valid numeric results for sorting/analysis
+                    valid_df = dock_df[dock_df['Binding Energy (kcal/mol)'] != 'N/A'].copy()
+                    
+                    if not valid_df.empty:
+                        # Convert column to numeric for sorting
+                        valid_df['Binding Energy (kcal/mol)'] = pd.to_numeric(valid_df['Binding Energy (kcal/mol)'])
+                        dock_df_sorted = valid_df.sort_values('Binding Energy (kcal/mol)')
+                        
+                        # 4. Generate AI Analysis (Initialize client HERE to avoid NameError)
+                        client = GroqClient(st.session_state['groq_api_key'])
                         report = client.generate_docking_analysis(dock_df_sorted, protein)
                         
-                        # Display
-                        st.success(f"✅ Success: {len(dock_df_sorted)} leads found.")
-                        st.dataframe(dock_df_sorted)
+                        # 5. Save to Session State
+                        st.session_state['docking_results_df'] = dock_df_sorted
+                        st.session_state['docking_analysis_report'] = report
+                        
+                        # 6. Display Results
+                        st.success(f"✅ Docked {len(dock_df_sorted)} compounds successfully.")
+                        st.dataframe(dock_df_sorted, use_container_width=True)
+                        
+                        st.markdown("### 🤖 Expert Structural Analysis")
                         st.markdown(report)
-                
-                        # PDF DOWNLOAD (Guarded against IndexError)
+                        
+                        # 7. Downloads
                         st.markdown("---")
-                        if st.button("📄 Generate Research PDF", key='pdf_dock_final'):
+                        col_d1, col_d2 = st.columns(2)
+                        
+                        with col_d1:
+                            # PDF Export
                             pdf_data = export_results_to_pdf(dock_df_sorted, report, title=f"Docking Analysis: {protein}")
-                            st.download_button("📥 Download PDF", data=pdf_data, file_name="report.pdf", mime="application/pdf")
+                            st.download_button(
+                                label="📥 Download PDF Report",
+                                data=pdf_data,
+                                file_name=f"docking_{protein}.pdf",
+                                mime="application/pdf"
+                            )
+                            
+                        with col_d2:
+                            # CSV/Text Export
+                            combined_text = f"DOCKING REPORT: {protein}\n{'='*30}\n{dock_df_sorted.to_csv(index=False)}\n\nANALYSIS:\n{report}"
+                            st.download_button(
+                                label="📄 Download Full Results (Text)",
+                                data=combined_text,
+                                file_name=f"docking_{protein}.txt",
+                                mime="text/plain"
+                            )
                     else:
-                        st.error("No valid results found in the uploaded file.")                
-
+                        st.error("All docking attempts failed. Please check the 2D structures of your ligands.")
+                else:
+                    st.warning("No results were generated.")
 
 # ============================================================================
 # TAB 5: ADMET PREDICTION)
