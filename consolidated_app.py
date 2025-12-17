@@ -28,6 +28,11 @@ import tempfile
 import subprocess
 
 
+import sklearn
+import st
+st.write(f"My Streamlit App's scikit-learn version is: {sklearn.__version__}")
+
+
 VISION_AVAILABLE = True
 LITERATURE_AVAILABLE = True
 RDKIT_AVAILABLE = True
@@ -1847,6 +1852,8 @@ with tab_literature:
         search_button = st.button("🔍 Search Literature", type="primary", width='stretch', key="lit_search_btn")
     
     if search_button and plant_name and disease_name:
+        groq_api_key = st.session_state.get('groq_api_key')
+        
         if not LITERATURE_AVAILABLE:
             st.error("Literature mining dependencies not installed. Install: biopython, groq")
         elif not groq_api_key:
