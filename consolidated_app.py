@@ -3171,7 +3171,15 @@ with tab_chat:
     for msg in st.session_state.chat_history:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
-            
+
+    # 3. Handle User Input
+    if prompt := st.chat_input("Ask about bioactivity, docking, or structural alerts..."):
+        # Add user message to history
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+    
     # 1. Setup Context from other tabs
     context_data = ""
     if 'bio_results_df' in st.session_state:
@@ -3197,7 +3205,7 @@ with tab_chat:
         else:
             client = GroqClient(groq_api_key)
             # Combine System Prompt + Context + Current User Query
-            full_prompt = f"{RESEARCH_ASSISTANT_SYSTEM_PROMPT}\n\nCURRENT CONTEXT:\n{context_data}\n\nUSER QUESTION: {prompt}"
+            full_prompt = f"{system_prompt}\n\nCURRENT CONTEXT:\n{context_data}\n\nUSER QUESTION: {prompt}"
             
             with st.spinner("Thinking..."):
                 try:
