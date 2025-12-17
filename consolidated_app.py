@@ -893,7 +893,7 @@ import os
 
 DRIVE_FILE_CONFIG = {
     "my_admet_models_solubility": {
-        "file_id": "1RXG05-offht2ksX5HrydBf3pHHtoyodM/view?usp=sharing", 
+        "file_id": "1RXG05-offht2ksX5HrydBf3pHHtoyodM", 
         "local_filename": "my_admet_models_solubility.pkl"
     }
 }
@@ -944,11 +944,24 @@ def load_admet_models():
 
     for display_name, file_prefix in ADMET_MODEL_CONFIG.items():
         
-        # --- NEW INTEGRATION STEP ---
-        # 1. Check/Download the model if configured for external drive
-        if not check_and_download_model(file_prefix):
-            st.warning(f"⚠️ Skipping {display_name} due to download failure.")
-            continue # Skip to the next model
+        # 1. Model file path (e.g., my_admet_models_logp_model.pkl)
+        model_path = f"{ADMET_MODEL_DIR}/{file_prefix}_model.pkl" 
+        
+        # 2. Scaler file paths (check both naming conventions)
+        scaler_path_pattern1 = f"{ADMET_MODEL_DIR}/{file_prefix}_scaler.pkl"
+        scaler_path_pattern2 = f"{ADMET_MODEL_DIR}/{file_prefix}_scaler(1).pkl" # Matches your image
+
+        if os.path.exists(model_path):
+            try:
+                # --- FIX: ENSURE joblib IS IMPORTED ---
+                model = joblib.load(model_path)
+                
+                # Load Scaler (Robust Check)
+                scaler = None
+                if os.path.exists(scaler_path_pattern1):
+                    scaler = joblib.load(scaler_path_pattern1)
+                elif os.path.exists(scaler_path_pattern2):
+                    scaler = joblib.load(scaler_path_pattern2)
     
 
     if not os.path.exists(ADMET_MODEL_DIR):
@@ -956,7 +969,7 @@ def load_admet_models():
         return models
 
     for display_name, file_prefix in ADMET_MODEL_CONFIG.items():
-        model_path = f"{ADMET_MODEL_DIR}/{file_prefix}.pkl"
+        model_path = f"{ADMET_MODEL_DIR}/{file_prefix}_model.pkl"
         scaler_path = f"{ADMET_MODEL_DIR}/{file_prefix}_scaler.pkl"
 
         if os.path.exists(model_path):
