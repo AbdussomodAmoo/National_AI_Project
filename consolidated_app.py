@@ -1796,7 +1796,8 @@ tab_home, tab_literature, tab_3d, tab_plant, tab_bio, tab_dock, tab_admet, tab_s
     "🔬 Bioactivity Analysis",
     "🔗 Molecular Docking",
     "🖥️ ADMET PREDICTION",
-    "🧪 Retrosynthesis"
+    "🧪 Retrosynthesis",
+    "🤖 Research Assistant"
 ])
 
 # ============================================================================
