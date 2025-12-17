@@ -963,7 +963,7 @@ def load_admet_models():
                 elif os.path.exists(scaler_path_pattern2):
                     scaler = joblib.load(scaler_path_pattern2)
             except Exception as e:
-                # ... (error handling) ...
+                print(f"❌ ADMET Directory not found: {ADMET_MODEL_DIR}")
         else:
             st.warning(f"⚠️ Model file not found for {display_name}: Expected {model_path}")
 
