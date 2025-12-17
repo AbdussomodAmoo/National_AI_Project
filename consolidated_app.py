@@ -965,9 +965,9 @@ def load_admet_models():
         # Path logic based on your uploaded image filenames
         model_path = f"{admet_dir}/{file_prefix}_model.pkl"
         # Try both scaler naming versions found in your image
-        scaler_path = f"{admet_dir}/{file_prefix}_scaler (1).pkl" 
+        scaler_path = f"{admet_dir}/{file_prefix}_scaler.pkl" 
         if not os.path.exists(scaler_path):
-            scaler_path = f"{admet_dir}/{file_prefix}_scaler.pkl"
+            scaler_path = f"{admet_dir}/{file_prefix}_scaler (1).pkl"
 
         loaded = False
         
