@@ -2592,10 +2592,18 @@ with tab_bio:
         if input_method == "Upload CSV":
             bio_csv = st.file_uploader("Upload CSV with SMILES", type=['csv'], key='bio_csv')
             if bio_csv:
-                bio_df = pd.read_csv(bio_csv)
-                smiles_col = st.selectbox("Select SMILES column:", bio_df.columns, key='bio_smiles_col')
-                bio_smiles = bio_df[smiles_col].dropna().tolist()[:50]
-                st.success(f"✅ Loaded {len(bio_smiles)} SMILES")
+                try:
+                    temp_df = pd.read_csv(bio_csv)
+                    # Automatically find the SMILES column regardless of case
+                    smiles_col = next((c for c in temp_df.columns if 'smiles' in c.lower()), None)
+                    
+                    if smiles_col:
+                        bio_smiles = temp_df[smiles_col].dropna().astype(str).tolist()[:50]
+                        st.success(f"✅ Loaded {len(bio_smiles)} SMILES from '{smiles_col}' column")
+                    else:
+                        st.error("❌ No column containing 'SMILES' found in CSV. Please rename your column.")
+                except Exception as e:
+                    st.error(f"Error reading CSV: {e}")
         
         elif input_method == "Paste SMILES":
             smiles_input = st.text_area(
@@ -2818,6 +2826,19 @@ with tab_dock:
         if dock_input == "Upload CSV":
             dock_csv = st.file_uploader("Upload CSV", type=['csv'], key='dock_csv')
             if dock_csv:
+                try:
+                    temp_df = pd.read_csv(dock_csv)
+                    # Automatically find the SMILES column regardless of case
+                    smiles_col = next((c for c in temp_df.columns if 'smiles' in c.lower()), None)
+                    
+                    if smiles_col:
+                        dock_smiles = temp_df[smiles_col].dropna().astype(str).tolist()[:50]
+                        st.success(f"✅ Loaded {len(dock_smiles)} SMILES from '{smiles_col}' column")
+                    else:
+                        st.error("❌ No column containing 'SMILES' found in CSV. Please rename your column.")
+                except Exception as e:
+                    st.error(f"Error reading CSV: {e}")
+                
                 dock_df = pd.read_csv(dock_csv)
                 col = st.selectbox("SMILES column:", dock_df.columns, key='dock_col')
                 dock_smiles = dock_df[col].dropna().tolist()[:10]
@@ -2923,60 +2944,30 @@ with tab_dock:
                             'Binding Affinity': 'Failed',
                             'Status': '❌ Docking failed'
                         })
+                                    
+                if dock_results:
+                    dock_df = pd.DataFrame(dock_results)
+                    # Filter only successful runs
+                    dock_df_valid = dock_df[dock_df['Binding Energy (kcal/mol)'] != 'N/A'].copy()
+                    
+                    if not dock_df_valid.empty:
+                        # Sort and run LLM
+                        dock_df_sorted = dock_df_valid.sort_values('Binding Energy (kcal/mol)')
+                        client = GroqClient(groq_api_key)
+                        report = client.generate_docking_analysis(dock_df_sorted, protein)
+                        
+                        # Display
+                        st.success(f"✅ Success: {len(dock_df_sorted)} leads found.")
+                        st.dataframe(dock_df_sorted)
+                        st.markdown(report)
                 
-                # 2. CREATE DATAFRAME
-                dock_df = pd.DataFrame(dock_results)
-                # Ensure we only sort numeric values to avoid errors
-                dock_df_valid = dock_df[dock_df['Binding Energy (kcal/mol)'] != 'N/A'].copy()
-                dock_df_valid['Binding Energy (kcal/mol)'] = pd.to_numeric(dock_df_valid['Binding Energy (kcal/mol)'])
-                dock_df_sorted = dock_df_valid.sort_values('Binding Energy (kcal/mol)')
-    
-                # 3. INITIALIZE CLIENT & GENERATE REPORT (Prevents NameError)
-                client = GroqClient(groq_api_key)
-                report = client.generate_docking_analysis(dock_df_sorted, protein)
-                
-                # Save results to session state for persistence
-                st.session_state['docking_results_df'] = dock_df_sorted
-                st.session_state['docking_analysis_report'] = report
-    
-                # 4. DISPLAY RESULTS
-                st.success(f"✅ Successfully docked {len(dock_results)} compounds")
-                st.dataframe(dock_df_sorted, use_container_width=True)
-                
-                st.markdown("---")
-                st.subheader("🤖 Expert Structural Analysis")
-                st.markdown(report)
-    
-                # 5. INTEGRATED DOWNLOAD BUTTONS
-                st.markdown("### 📥 Download Results")
-                col_dl1, col_dl2 = st.columns(2)
-                
-                with col_dl1:
-                    # Combined Text Report
-                    combined_text = (
-                        f"MOLECULAR DOCKING REPORT: {protein}\n"
-                        f"{'='*40}\n"
-                        f"{dock_df_sorted.to_csv(index=False)}\n\n"
-                        f"EXPERT INTERPRETATION:\n"
-                        f"{'-'*40}\n{report}"
-                    )
-                    st.download_button(
-                        label="📄 Download Full Text Report",
-                        data=combined_text,
-                        file_name=f"docking_report_{protein}.txt",
-                        mime="text/plain"
-                    )
-    
-                with col_dl2:
-                    # Professional PDF
-                    pdf_bytes = export_results_to_pdf(dock_df_sorted, report, title=f"Docking Analysis: {protein}")
-                    st.download_button(
-                        label="📥 Download PDF Document",
-                        data=pdf_bytes,
-                        file_name=f"docking_analysis_{protein}.pdf",
-                        mime="application/pdf"
-                    )
-
+                        # PDF DOWNLOAD (Guarded against IndexError)
+                        st.markdown("---")
+                        if st.button("📄 Generate Research PDF", key='pdf_dock_final'):
+                            pdf_data = export_results_to_pdf(dock_df_sorted, report, title=f"Docking Analysis: {protein}")
+                            st.download_button("📥 Download PDF", data=pdf_data, file_name="report.pdf", mime="application/pdf")
+                    else:
+                        st.error("No valid results found in the uploaded file.")                
 
 
 # ============================================================================
