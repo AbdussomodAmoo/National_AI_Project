@@ -1062,7 +1062,7 @@ class GroqClient:
     # Note: The Groq module is imported at the top of vision_app.py
     def __init__(self, api_key: str):
         self.client = Groq(api_key=api_key)
-        self.model = "llama-3.1-70b-versatile"
+        self.model = "llama-3.3-70b-versatile"
 
     def generate_expert_analysis(self, compound_df: pd.DataFrame, target_disease: str) -> str:
         """Generates a summary of compounds for a target disease using LLM."""
@@ -1071,7 +1071,7 @@ class GroqClient:
 
         # --- FIX: Standardize column names or select available ones ---
         # We look for common variants of SMILES and Weight columns
-        rename_dict = {
+        column_mapping = {
             'SMILES': 'canonical_smiles',
             'Molecular Weight': 'molecular_weight',
             'Compound_Name': 'Compound_Name'
@@ -1079,7 +1079,7 @@ class GroqClient:
         
         # Create a copy for analysis and rename what we find
         analysis_df = compound_df.copy()
-        analysis_df.rename(columns=rename_dict, inplace=True)
+        analysis_df.rename(columns=column_mapping, inplace=True)
         
         # Select only the columns that actually exist now
         available_cols = [c for c in ['Compound_Name', 'canonical_smiles', 'molecular_weight'] if c in analysis_df.columns]
@@ -2607,7 +2607,11 @@ with tab_bio:
         # LLM Analysis
         st.markdown("---")
         st.subheader("🤖 Expert Interpretation")
-        
+
+        # --- DEBUG BLOCK: Insert here to see columns every time this section renders ---
+        with st.expander("🛠️ Debug: Inspect Result Structure", expanded=False):
+            st.write("Current Columns in results_df:", list(results_df.columns))
+            st.dataframe(results_df.head(2)) # Show a small preview
         if not groq_api_key:
             st.warning("Enter Groq API Key in sidebar to generate AI analysis")
         elif st.button("🚀 Generate Expert Analysis", type="secondary", key='run_llm_bio'):
