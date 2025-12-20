@@ -3302,7 +3302,7 @@ with tab_chat:
         st.session_state.messages = [{"role": "assistant", "content": "Welcome! I am your Research Assistant. How can I help with your drug discovery data today?"}]
 
     # 1. Display History
-    for message in st.session_state.chat_history:
+    for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
@@ -3331,9 +3331,9 @@ with tab_chat:
                 try:
                     # Use the specific prompt provided by the user
                     response = client.get_research_assistant_response(
-                        user_prompt=prompt,
-                        chat_history=st.session_state.messages,
-                        context=session_context
+                        prompt,
+                        st.session_state.messages,
+                        session_context
                     )
                     
                     # Display and save response
