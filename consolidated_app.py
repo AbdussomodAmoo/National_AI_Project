@@ -297,7 +297,7 @@ def predict_druglikeness_properties(smiles):
 # ============================================================================
 # PDF FUNCTIONS
 # ============================================================================
-def export_results_to_pdf(df, report_text, title="Drug Discovery Report"):
+def export_results_to_pdf(df, report, title="Drug Discovery Report"):
     """Creates a professional PDF document containing results and expert analysis."""
     if df.empty:
         # Return a simple PDF indicating no data was found
@@ -309,6 +309,18 @@ def export_results_to_pdf(df, report_text, title="Drug Discovery Report"):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
     styles = getSampleStyleSheet()
+    if 'Caption' not in styles:
+        styles.add(ParagraphStyle(
+            name='Caption',
+            parent=styles['Normal'],
+            fontSize=10,
+            leading=12,
+            alignment=1, # Center
+            textColor=colors.grey,
+            fontName='Helvetica-Oblique'
+        ))
+
+    
     story = []
     
     # 1. Header
@@ -320,7 +332,8 @@ def export_results_to_pdf(df, report_text, title="Drug Discovery Report"):
     # SAFE ACCESS: Check if df has rows and 'SMILES' column
     if not df.empty and 'SMILES' in df.columns:
         try:
-            top_smi = df.iloc[0]['SMILES'].replace("...", "") # Remove debug ellipses
+            # Get top compound (safely handle ellipses from display versions)
+            top_smi = str(df.iloc[0]['SMILES']).replace("...", "") # Remove debug ellipses
             mol = Chem.MolFromSmiles(top_smi)
             if mol:
                 # Create a temporary image in memory
@@ -329,33 +342,40 @@ def export_results_to_pdf(df, report_text, title="Drug Discovery Report"):
                 img_buffer.seek(0)
                 story.append(RLImage(img_buffer, width=200, height=200))
                 story.append(Paragraph(f"<i>Top Candidate Structure: {top_smi[:20]}...</i>", getSampleStyleSheet()['Caption']))
-            
+            else:
+                story.append(Paragraph("<i>(Structure could not be rendered)</i>", styles['Caption']))
+                
         except Exception as e:
             story.append(Paragraph(f"<i>(Structure rendering unavailable)</i>", styles['Caption']))
          
     # 3. Expert Analysis Section
     story.append(Paragraph("<b>Expert Analysis Interpretation</b>", styles['Heading2']))
     # Clean markdown characters for basic PDF compatibility
-    clean_text = report_text.replace("#", "").replace("*", "")
+    clean_text = report_text.replace("#", "").replace("*", "") # Clean markdown
     story.append(Paragraph(clean_text, styles['Normal']))
     story.append(Spacer(1, 20))
 
     # 4. Tabular Results Section
     story.append(Paragraph("<b>Detailed Screening Data</b>", styles['Heading2']))
-    # Prepare data for ReportLab Table (List of Lists)
-    table_data = [df.columns.tolist()] + df.head(15).values.tolist()
-    
-    # Simple table styling
-    t = Table(table_data)
-    t.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black)
-    ]))
-    story.append(t)
+
+    if not df.empty:
+        # Limit columns for PDF readability
+        display_cols = df.columns.tolist()[:5] 
+        table_data = [display_cols] + df[display_cols].head(15).values.tolist()
+        
+        t = Table(table_data)
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        story.append(t)
+    else:
+        story.append(Paragraph("No data available for table.", styles['Normal']))
+        
 
     doc.build(story)
     pdf_bytes = buffer.getvalue()
