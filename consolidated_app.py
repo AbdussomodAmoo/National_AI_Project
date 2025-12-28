@@ -2860,6 +2860,7 @@ with tab_bio:
                     file_name=f"bio_report_{target_query}.pdf",
                     mime="application/pdf"
                 )
+                
 # ========================================================================
 # MOLECULAR DOCKING TAB (MODIFIED for LLM Analysis)
 # ========================================================================
