@@ -298,84 +298,78 @@ def predict_druglikeness_properties(smiles):
 # PDF FUNCTIONS
 # ============================================================================
 def export_results_to_pdf(df, report, title="Drug Discovery Report"):
-    """Creates a professional PDF document containing results and expert analysis."""
-    if df.empty:
-        # Return a simple PDF indicating no data was found
+    """Creates a professional PDF document with locally defined styles to prevent KeyErrors."""
+    from io import BytesIO
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    from rdkit import Chem
+    from rdkit.Chem import Draw
+
+    if df is None or df.empty:
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter)
-        doc.build([Paragraph("No data available for this report.", getSampleStyleSheet()['Normal'])])
+        styles = getSampleStyleSheet()
+        doc.build([Paragraph("No data available for this report.", styles['Normal'])])
         return buffer.getvalue()
-        
+
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
     styles = getSampleStyleSheet()
-    if 'Caption' not in styles:
-        styles.add(ParagraphStyle(
-            name='Caption',
-            parent=styles['Normal'],
-            fontSize=10,
-            leading=12,
-            alignment=1, # Center
-            textColor=colors.grey,
-            fontName='Helvetica-Oblique'
-        ))
 
-    
+    # UNIVERSAL FIX: Create a standalone style object to avoid KeyError
+    caption_style = ParagraphStyle(
+        name='CaptionStyle',
+        parent=styles['Normal'],
+        fontSize=10,
+        leading=12,
+        alignment=1,  # Center
+        textColor=colors.grey,
+        fontName='Helvetica-Oblique'
+    )
+
     story = []
-    
-    # 1. Header
     story.append(Paragraph(f"<b>{title}</b>", styles['Title']))
     story.append(Spacer(1, 12))
-    
-    
-    # 2. Add 2D Structure of the Top Candidate
-    # SAFE ACCESS: Check if df has rows and 'SMILES' column
-    if not df.empty and 'SMILES' in df.columns:
+
+    # Add 2D Structure of the Top Candidate
+    if 'SMILES' in df.columns and len(df) > 0:
         try:
-            # Get top compound (safely handle ellipses from display versions)
-            top_smi = str(df.iloc[0]['SMILES']).replace("...", "") # Remove debug ellipses
+            top_smi = str(df.iloc[0]['SMILES']).replace("...", "")
             mol = Chem.MolFromSmiles(top_smi)
             if mol:
-                # Create a temporary image in memory
                 img_buffer = BytesIO()
                 Draw.MolToImage(mol, size=(300, 300)).save(img_buffer, format="PNG")
                 img_buffer.seek(0)
                 story.append(RLImage(img_buffer, width=200, height=200))
-                story.append(Paragraph(f"<i>Top Candidate Structure: {top_smi[:20]}...</i>", getSampleStyleSheet()['Caption']))
-            else:
-                story.append(Paragraph("<i>(Structure could not be rendered)</i>", styles['Caption']))
-                
-        except Exception as e:
-            story.append(Paragraph(f"<i>(Structure rendering unavailable)</i>", styles['Caption']))
-         
-    # 3. Expert Analysis Section
+                # Use the local style object directly
+                story.append(Paragraph(f"Top Candidate Structure: {top_smi[:30]}...", caption_style))
+        except Exception:
+            story.append(Paragraph("(Structure rendering skipped)", caption_style))
+
+    # Expert Analysis Section
+    story.append(Spacer(1, 12))
     story.append(Paragraph("<b>Expert Analysis Interpretation</b>", styles['Heading2']))
-    # Clean markdown characters for basic PDF compatibility
-    clean_text = report_text.replace("#", "").replace("*", "") # Clean markdown
+    
+    # Clean report text for PDF
+    clean_text = str(report).replace("#", "").replace("*", "")
     story.append(Paragraph(clean_text, styles['Normal']))
     story.append(Spacer(1, 20))
 
-    # 4. Tabular Results Section
+    # Tabular Results
     story.append(Paragraph("<b>Detailed Screening Data</b>", styles['Heading2']))
-
-    if not df.empty:
-        # Limit columns for PDF readability
-        display_cols = df.columns.tolist()[:5] 
-        table_data = [display_cols] + df[display_cols].head(15).values.tolist()
-        
-        t = Table(table_data)
-        t.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black)
-        ]))
-        story.append(t)
-    else:
-        story.append(Paragraph("No data available for table.", styles['Normal']))
-        
+    display_cols = df.columns.tolist()[:5]
+    table_data = [display_cols] + df[display_cols].head(15).values.tolist()
+    
+    t = Table(table_data)
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    story.append(t)
 
     doc.build(story)
     pdf_bytes = buffer.getvalue()
@@ -2807,91 +2801,65 @@ with tab_bio:
                     st.session_state['bio_llm_analysis_report'] = ""
                     st.session_state['bio_model_type'] = models_dict[target]['type']
                     st.rerun()
-    
-    # Display results
+        
+    # --- Bioactivity Display Logic ---
     if 'bio_results_df' in st.session_state and not st.session_state['bio_results_df'].empty:
         results_df = st.session_state['bio_results_df']
         target_query = st.session_state['bio_target_query']
         model_type = st.session_state.get('bio_model_type', 'unknown')
-        
+    
         st.subheader("📊 Prediction Results")
-        # Display model type indicator
         st.info(f"**Model Type:** {model_type.title()} | **Target:** {target_query}")
-
-        # show dataframe
         st.dataframe(results_df, use_container_width=True)
-        
-        # Statistics
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Tested", len(results_df))
-        with col2:
-            active_count = (results_df['Predicted Activity'] == 'Active').sum()
-            st.metric("Active Compounds", active_count)
-        with col3:
-            if model_type == 'regression':
-                # Show average IC50 for regression models
-                avg_ic50 = results_df['IC50 (μM)'].str.replace(' μM', '').astype(float).mean()
-                st.metric("Avg IC50 (μM)", f"{avg_ic50:.2f}")
-            else:
-                # Show hit rate for classification models
-                hit_rate = (active_count / len(results_df)) * 100
-                st.metric("Hit Rate", f"{hit_rate:.1f}%")
-        
-        # LLM Analysis
+    
+        # Statistics Section
+        c1, c2, c3 = st.columns(3)
+        active_count = (results_df['Predicted Activity'] == 'Active').sum()
+        c1.metric("Total Tested", len(results_df))
+        c2.metric("Active Compounds", active_count)
+        if model_type == 'regression':
+            avg_ic50 = results_df['IC50 (μM)'].str.replace(' μM', '').astype(float).mean()
+            c3.metric("Avg IC50 (μM)", f"{avg_ic50:.2f}")
+        else:
+            hit_rate = (active_count / len(results_df)) * 100
+            c3.metric("Hit Rate", f"{hit_rate:.1f}%")
+    
         st.markdown("---")
         st.subheader("🤖 Expert Interpretation")
-
-        # --- DEBUG BLOCK: Insert here to see columns every time this section renders ---
-        with st.expander("🛠️ Debug: Inspect Result Structure", expanded=False):
-            st.write("Current Columns in results_df:", list(results_df.columns))
-            st.dataframe(results_df.head(2)) # Show a small preview
+    
+        # Handle Analysis Generation
         if not groq_api_key:
-            st.warning("Enter Groq API Key in sidebar to generate AI analysis")
-        elif st.button("🚀 Generate Expert Analysis", type="secondary", key='run_llm_bio'):
-            client = GroqClient(groq_api_key)
-            with st.spinner(f"Analyzing results for {target_query}..."):
-                report = client.generate_expert_analysis(results_df, target_query)
-                st.markdown(report)
-
-                # NEW INSERTION POINT: Professional PDF Export
-                st.markdown("---")
-                if st.button("📄 Generate Professional PDF", key='pdf_bio'):
-                    # Pass the specific results and report to the exporter
-                    pdf_data = export_results_to_pdf(results_df, report, title=f"Bioactivity Report: {target_query}")
-                    st.download_button(
-                        label="📥 Download PDF Report",
-                        data=pdf_data,
-                        file_name=f"bioactivity_report_{target_query.replace(' ', '_')}.pdf",
-                        mime="application/pdf"
-                    )
+            st.warning("Enter Groq API Key in sidebar for AI analysis")
+        else:
+            # Trigger LLM Analysis
+            if st.button("🚀 Generate Expert Analysis", key='run_llm_bio'):
+                client = GroqClient(groq_api_key)
+                with st.spinner("Analyzing..."):
+                    report = client.generate_expert_analysis(results_df, target_query)
+                    st.session_state['llm_analysis_report'] = report
+                    st.rerun()
+    
+        # Display and Download (Persistent)
+        if st.session_state.get('llm_analysis_report'):
+            report = st.session_state['llm_analysis_report']
+            st.markdown(report)
             
-            st.session_state['llm_analysis_report'] = report
-            st.rerun()
-        
-        # Display report
-        if 'llm_analysis_report' in st.session_state and st.session_state['llm_analysis_report']:
             st.markdown("### 📥 Download Reports")
-            st.markdown(st.session_state['llm_analysis_report'])
-            report_text = st.session_state['llm_analysis_report']
-        
-        # Download
-        csv = results_df.to_csv(index=False)
-        st.download_button(
-            "📥 Download Results",
-            data=csv,
-            file_name=f"bioactivity_{target_query.replace(' ', '_')}.csv",
-            mime="text/csv"
-        )
-        
-        # Pass the specific results and report to the exporter
-        pdf_data = export_results_to_pdf(results_df, report, title=f"Bioactivity Report: {target_query}")
-        st.download_button(
-            label="📥 Download PDF Report",
-            data=pdf_data,
-            file_name=f"bioactivity_report_{target_query.replace(' ', '_')}.pdf",
-            mime="application/pdf"
-        )
+            col_csv, col_pdf = st.columns(2)
+            
+            with col_csv:
+                csv_data = results_df.to_csv(index=False)
+                st.download_button("📥 Download CSV Results", data=csv_data, file_name="results.csv", mime="text/csv")
+                
+            with col_pdf:
+                # Re-generate PDF with persistent report
+                pdf_bytes = export_results_to_pdf(results_df, report, title=f"Bioactivity Report: {target_query}")
+                st.download_button(
+                    label="📄 Download PDF Report",
+                    data=pdf_bytes,
+                    file_name=f"bio_report_{target_query}.pdf",
+                    mime="application/pdf"
+                )
 # ========================================================================
 # MOLECULAR DOCKING TAB (MODIFIED for LLM Analysis)
 # ========================================================================
