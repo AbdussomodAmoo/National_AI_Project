@@ -2883,12 +2883,14 @@ with tab_bio:
             file_name=f"bioactivity_{target_query.replace(' ', '_')}.csv",
             mime="text/csv"
         )
-        #Download Expert Analysis
+        
+        # Pass the specific results and report to the exporter
+        pdf_data = export_results_to_pdf(results_df, report, title=f"Bioactivity Report: {target_query}")
         st.download_button(
-            label="📄 Download Expert Analysis (TXT)",
-            data=report_text,
-            file_name="bioactivity_expert_analysis.txt",
-            mime="text/plain"
+            label="📥 Download PDF Report",
+            data=pdf_data,
+            file_name=f"bioactivity_report_{target_query.replace(' ', '_')}.pdf",
+            mime="application/pdf"
         )
 # ========================================================================
 # MOLECULAR DOCKING TAB (MODIFIED for LLM Analysis)
